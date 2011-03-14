@@ -462,8 +462,11 @@ class PlexMovieAgent(Agent.Movies):
         # Studio: a number after "| Компания = ".
         match = MATCHER_FILM_STUDIO.search(filmContent)
         if match:
+          studio = match.groups(1)[0]
           Log('++++++++ STUDIO')
-          contentDict['studio'] = match.groups(1)[0]
+          # Removing annoying "по заказу..." if it's present.
+          matcher = re.compile(u'(.*?)\s*\u043F\u043E\s\u0437\u0430\u043A\u0430\u0437\u0443.*', re.M | re.L)
+          contentDict['studio'] = matcher.sub(r'\1', studio)
           score += 1
 
         # Genre: "<br />" separated values after "| Жанр = ".
