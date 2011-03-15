@@ -3,6 +3,7 @@ import datetime, string, re, time, unicodedata, hashlib, urlparse, types
 WIKI_QUERY_URL = 'http://ru.wikipedia.org/w/api.php?action=query&list=search&srprop=timestamp&format=xml&srsearch=%s'
 WIKI_TITLEPAGE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=timestamp|user|comment|content&format=xml&titles=%s'
 WIKI_IDPAGE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=timestamp|user|comment|content&format=xml&pageids=%s'
+WIKI_QUERYFILE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=imageinfo&iiprop=url&format=xml&titles=Файл:%s'
 USER_AGENT = 'Plex RussianMovie Agent (+http://www.plexapp.com/) v.%s'
 AGENT_VERSION = '0.1'
 QUERY_CACHE_TIME = 3600
@@ -24,8 +25,10 @@ MATCHER_FILM_TITLE = re.compile(u'^\s*\|\s*\u0420\u0443\u0441\u041D\u0430\u0437\
 MATCHER_FILM_YEAR = re.compile(u'^\s*\|\s*\u0413\u043E\u0434\s*=\s*(\d{4})\s*$', re.M)
 # Duration: a number after "| Время = ".
 MATCHER_FILM_DURATION = re.compile(u'^\s*\|\s*\u0412\u0440\u0435\u043C\u044F\s+=\s+(\d+)\s+.*$', re.M | re.S)
-# Studio: a number after "| Компания = ".
+# Studio: text after "| Компания = ".
 MATCHER_FILM_STUDIO = re.compile(u'^\s*\|\s*\u041A\u043E\u043C\u043F\u0430\u043D\u0438\u044F\s*=\s*(.*?)\s*$', re.S | re.M)
+# Studio: filename after "| Изображение = ".
+MATCHER_FILM_IMAGE = re.compile(u'^\s*\|\s*\u0418\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435\s*=\s*(.*?)\s*$', re.S | re.M)
 # Genre: text after "| Жанр = ".
 MATCHER_FILM_GENRES = re.compile(u'^\s*\|\s*\u0416\u0430\u043D\u0440\s*=\s*(.*?)\s*$', re.S | re.M)
 # Directors: text after "| Режиссёр = ". 
@@ -146,7 +149,9 @@ class PlexMovieAgent(Agent.Movies):
     #
     if media and metadata.title is None:
       metadata.title = media.title
-        
+
+    imdbData = None
+    wikiImgUrl = None
     wikiPageUrl = WIKI_IDPAGE_URL % wikiId
     tmpResult = self.getAndParseItemsWikiPage(wikiPageUrl)
     if tmpResult is not None:
@@ -218,14 +223,16 @@ class PlexMovieAgent(Agent.Movies):
           metadata.countries.add(country)
           Log('+++++++++++++++ metadata.country: ' + country)
 
+      # Image.
+      if 'image' in tmpResult:
+        wikiImgUrl = tmpResult['image']
+        Log('+++++++++++++++ wiki.image: ' + wikiImgUrl)
+
+
       # Requesting more data from imdb if we have an id.
       if 'imdb_id' in tmpResult:
+        Log('+++++++++++++++ imdb.id: ' + tmpResult['imdb_id'])
         imdbData = self.getDataFromImdb(tmpResult['imdb_id'])
-
-        # Content rating.
-        if 'rating' in imdbData:
-          metadata.rating = float(imdbData['rating'])
-          # metadata.content_rating =  ??? what's this?
 
 
     # Get the filename and the mod time.
@@ -237,10 +244,123 @@ class PlexMovieAgent(Agent.Movies):
 #    metadata.trivia = 'triviaaaaaaaaaaaaaaa'
 #    metadata.quotes = 'quotesssssssssssss'
 #    metadata.posters = {}
-#    metadata.arf
+
+
+    if imdbData is not None:
+      # Content rating.
+      if 'rating' in imdbData:
+        metadata.rating = float(imdbData['rating'])
+        # metadata.content_rating =  ??? what's this?
+
+
+    # Getting artwork.
+    self.fetchAndSetWikiArtwork(metadata, wikiImgUrl)
+
 #      LogChildren(metadata) ???????? Where is this method ?????????
 
     Log('RUSSIANMOVIE.update: FINISH <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
+
+
+  def fetchAndSetWikiArtwork(self, metadata, wikiImgFilename):
+    """
+        Optional wikiImgFilename.
+    """
+    #        figure out why we need posters and art...
+    posters_valid_names = list()
+    art_valid_names = list()
+
+    if wikiImgFilename is not None:
+      wikiImgQueryUrl = WIKI_QUERYFILE_URL % wikiImgFilename
+      xmlResult = getXmlFromWikiApiPage(wikiImgQueryUrl)
+      pathMatch = xmlResult.xpath('//api/query/pages/page')
+      if len(pathMatch) == 0:
+        Log('ERROR: unable to parse page "%s".' % wikiImgQueryUrl)
+        # TODO(zhenya): raise an error.
+
+      missing = pathMatch[0].get('missing')
+      if missing is not None:
+        Log('ERROR: file "%s" does not seem to exist.' % wikiImgFilename)
+        # TODO(zhenya): raise an error.
+
+      pathMatch = pathMatch[0].xpath('//imageinfo/ii')
+      if len(pathMatch) == 0:
+        Log('ERROR: image section is not found in a WIKI response.')
+        # TODO(zhenya): raise an error.
+
+      thumbUrl = pathMatch[0].get('url')
+#      thumbUrl = 'http://www.ruslania.com/pictures/big/4607143860377.jpg'
+      if thumbUrl is not None:
+        url = thumbUrl
+        metadata.posters[url] = Proxy.Preview(HTTP.Request(thumbUrl, cacheTime=QUERY_CACHE_TIME), sort_order = 1)
+        posters_valid_names.append(url)
+        art_valid_names.append(url)
+
+    metadata.posters.validate_keys(posters_valid_names)
+    metadata.art.validate_keys(art_valid_names)
+
+
+  def fetchArtworkI(self, metadata, media, lang):
+    imdb_code = metadata.id.lstrip('t0')
+    secret = Hash.MD5( ''.join([MPDB_SECRET, imdb_code]))[10:22]
+    queryJSON = JSON.ObjectFromURL(MPDB_JSON % (imdb_code, secret), cacheTime=10)
+    valid_names = list()
+
+    if not queryJSON.has_key('errors') and queryJSON.has_key('posters'):
+      i = 0
+      valid_names = list()
+
+      for poster in queryJSON['posters']:
+        imageUrl = MPDB_ROOT + '/' + poster['image_location']
+        thumbUrl = MPDB_ROOT + '/' + poster['thumbnail_location']
+        full_image_url = imageUrl + '?api_key=p13x2&secret=' + secret
+
+        if poster['language'] == 'US':
+          metadata.posters[full_image_url] = Proxy.Preview(HTTP.Request(thumbUrl), sort_order = i)
+          valid_names.append(full_image_url)
+          i += 1
+
+    metadata.posters.validate_keys(valid_names)
+
+  #Posters and arts
+  def fetchArtworkII(self):
+    posters_valid_names = list()
+    art_valid_names = list()
+
+    images = updateXMLresult.findall("images/image[@size='preview']")
+    indexImages = 1
+    for image in images:
+      def grapArts(metadata = metadata, image = image, indexImages = indexImages):
+        thumbUrl = image.get('url')
+        url = thumbUrl.replace("/preview/", "/main/")
+
+        type = image.get('type')
+        if (type == 'Poster'):
+          try:
+            #Check if main image exist
+            f = urllib2.urlopen(url)
+            test = f.info().gettype()
+
+            metadata.posters[url] = Proxy.Preview(HTTP.Request(thumbUrl, cacheTime=CP_CACHETIME_CP_FANART), sort_order = indexImages)
+            posters_valid_names.append(url)
+          except	Exception, e :
+            Log("[cine-passion Agent] : EXCEPT3 " + str(e))
+            Log('[cine-passion Agent] Error when fetching ' + thumbUrl + ' or '+ url)
+        elif (type == 'Fanart'):
+          try:
+            #Check if main image exist
+            f = urllib2.urlopen(url)
+            test = f.info().gettype()
+
+            metadata.art[url] = Proxy.Preview(HTTP.Request(thumbUrl, cacheTime=CP_CACHETIME_CP_FANART), sort_order = indexImages)
+            art_valid_names.append(url)
+          except	Exception, e :
+            Log("[cine-passion Agent] : EXCEPT4 " + str(e))
+            Log('[cine-passion Agent] Error when fetching ' + thumbUrl + ' or '+ url)
+      indexImages = indexImages + 1
+
+    #supress old unsued pictures
+    metadata.posters.validate_keys(posters_valid_names)
+    metadata.art.validate_keys(art_valid_names)
 
 
   def isBlank(self, string):
@@ -377,7 +497,7 @@ class PlexMovieAgent(Agent.Movies):
     """Given a WIKI page URL, gets it and parses its content.
 
        Returns a dictionary with the following keys:
-         'id', 'title', 'year', 'studio', 'imdb_id', 'summary',
+         'id', 'title', 'year', 'studio', 'imdb_id', 'summary', 'image',
          'duration', 'genres', 'directors', 'writers', 'roles', 'countries',
          'score', 'film', and 'all'.
        The later is the parsed and sanatized WIKI page content.
@@ -392,9 +512,8 @@ class PlexMovieAgent(Agent.Movies):
     contentDict = {}
     score = 0
     try:
-      requestHeaders = { 'User-Agent': USER_AGENT % AGENT_VERSION }
-      res = XML.ElementFromURL(wikiPageUrl, headers=requestHeaders, cacheTime=QUERY_CACHE_TIME)
-      pathMatch = res.xpath('//api/query/pages/page')
+      xmlResult = getXmlFromWikiApiPage(wikiPageUrl)
+      pathMatch = xmlResult.xpath('//api/query/pages/page')
       if len(pathMatch) == 0:
         Log('ERROR: unable to parse page "%s".' % wikiPageUrl)
         return None
@@ -469,6 +588,13 @@ class PlexMovieAgent(Agent.Movies):
           contentDict['studio'] = matcher.sub(r'\1', studio)
           score += 1
 
+        # Image: file name after "| Изображение = ".
+        match = MATCHER_FILM_IMAGE.search(filmContent)
+        if match:
+          Log('++++++++ IMAGE')
+          contentDict['image'] = match.groups(1)[0]
+          score += 1
+
         # Genre: "<br />" separated values after "| Жанр = ".
         match = MATCHER_FILM_GENRES.search(filmContent)
         if match:
@@ -532,12 +658,9 @@ class PlexMovieAgent(Agent.Movies):
       yearFromFilename = info['year']
       titleFromFilename = info['title']
       # TODO(zhenya): encode URL.
-      wikiQueryUrl = WIKI_QUERY_URL % titleFromFilename.replace(' ', '%20')
-      Log("INFO: Quering WIKI with URL: %s" % wikiQueryUrl)
-      requestHeaders = { 'User-Agent': USER_AGENT % AGENT_VERSION }
-
-      res = XML.ElementFromURL(wikiQueryUrl, headers=requestHeaders, cacheTime=QUERY_CACHE_TIME)
-      pathMatch = res.xpath('//api/query/searchinfo')
+      wikiQueryUrl = WIKI_QUERY_URL % titleFromFilename
+      xmlResult = getXmlFromWikiApiPage(wikiQueryUrl)
+      pathMatch = xmlResult.xpath('//api/query/searchinfo')
       if len(pathMatch) == 0:
         # TODO(zhenya): raise an error?
         Log('ERROR: searchinfo is not found in a WIKI response.')
@@ -547,7 +670,7 @@ class PlexMovieAgent(Agent.Movies):
           # TODO - implement case
           Log('INFO: No hits found! Getting a suggestion...')
         else:
-          pageMatches = res.xpath('//api/query/search/p')
+          pageMatches = xmlResult.xpath('//api/query/search/p')
 
       # Grabbing the first N results (in case if there are any).
       counts = 0
@@ -558,7 +681,7 @@ class PlexMovieAgent(Agent.Movies):
         pageTitle = safe_unicode(match.get('title'))
         pageId = None
         titleYear = None
-        wikiPageUrl = WIKI_TITLEPAGE_URL % pageTitle.replace(' ', '%20')
+        wikiPageUrl = WIKI_TITLEPAGE_URL % pageTitle
         tmpResult = self.getAndParseItemsWikiPage(wikiPageUrl)
         if tmpResult is not None:
           if 'id' in tmpResult:
@@ -611,7 +734,14 @@ class PlexMovieAgent(Agent.Movies):
     return imdbData
 
 
-def safe_unicode(s,encoding='utf-8'):
+def getXmlFromWikiApiPage(wikiPageUrl):
+  # TODO(zhenya): encode URL.
+  wikiPageUrl = wikiPageUrl.replace(' ', '%20')
+  requestHeaders = { 'User-Agent': USER_AGENT % AGENT_VERSION }
+  return XML.ElementFromURL(wikiPageUrl, headers=requestHeaders, cacheTime=QUERY_CACHE_TIME)
+
+
+def safe_unicode(s, encoding='utf-8'):
   if s is None:
     return None
   if isinstance(s, basestring):
