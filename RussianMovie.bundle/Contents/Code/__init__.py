@@ -21,6 +21,8 @@ MATCHER_FILM = re.compile(u'\{\{\u0424\u0438\u043B\u044C\u043C\s*(.*?)\s*^[^|]',
 MATCHER_FILM_IMDBID = re.compile(u'^\s*\|\s*imdb_id\s*=\s*(\d+)\s*$', re.M)
 # Title: "| РусНаз = ".
 MATCHER_FILM_TITLE = re.compile(u'^\s*\|\s*\u0420\u0443\u0441\u041D\u0430\u0437\s*=\s*(.*?)\s*$', re.M | re.S)
+# Original title: "| ОригНаз = ".
+MATCHER_FILM_ORIGINAL_TITLE = re.compile(u'^\s*\|\s*\u041E\u0440\u0438\u0433\u041D\u0430\u0437\s*=\s*(.*?)\s*$', re.M | re.S)
 # Year: "| Год = ".
 MATCHER_FILM_YEAR = re.compile(u'^\s*\|\s*\u0413\u043E\u0434\s*=\s*(\d{4})\s*$', re.M)
 # Duration: a number after "| Время = ".
@@ -161,6 +163,11 @@ class PlexMovieAgent(Agent.Movies):
       if 'title' in tmpResult:
         metadata.title = tmpResult['title']
         Log('+++++++++++++++ metadata.title: ' + metadata.title)
+
+      # Original title.
+      if 'original_title' in tmpResult:
+        metadata.original_title = tmpResult['original_title']
+        Log('+++++++++++++++ metadata.original_title: ' + metadata.original_title)
 
       # Year.
       if 'year' in tmpResult:
@@ -497,9 +504,9 @@ class PlexMovieAgent(Agent.Movies):
     """Given a WIKI page URL, gets it and parses its content.
 
        Returns a dictionary with the following keys:
-         'id', 'title', 'year', 'studio', 'imdb_id', 'summary', 'image',
-         'duration', 'genres', 'directors', 'writers', 'roles', 'countries',
-         'score', 'film', and 'all'.
+         'id', 'title', 'original_title', 'year', 'studio', 'imdb_id',
+         'summary', 'image', 'duration', 'genres', 'directors',
+         'writers', 'roles', 'countries', 'score', 'film', and 'all'.
        The later is the parsed and sanatized WIKI page content.
        Value for 'film' represents the {{Фильм}} tag if it's found.
        All values are strings or arrays of strings.
@@ -562,6 +569,13 @@ class PlexMovieAgent(Agent.Movies):
         if match:
           Log('++++++++ TITLE')
           contentDict['title'] = match.groups(1)[0]
+          score += 1
+
+        # Title: text after "| ОригНаз = ".
+        match = MATCHER_FILM_ORIGINAL_TITLE.search(filmContent)
+        if match:
+          Log('++++++++ ORIGINAL TITLE')
+          contentDict['original_title'] = match.groups(1)[0]
           score += 1
 
         # Year: NNNN number after "| Год = ".
