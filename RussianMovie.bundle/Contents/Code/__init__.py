@@ -45,6 +45,12 @@ MATCHER_FILM_COUNTRIES = re.compile(u'^\s*\|\s*\u0421\u0442\u0440\u0430\u043D\u0
 MATCHER_SUMMARY = re.compile(u'==\s\u0421\u044E\u0436\u0435\u0442\s==\s*\n(.+?)\n\s*==\s', re.S | re.M)
 
 
+# MoviePosterDB constants.
+MPDB_ROOT = 'http://movieposterdb.plexapp.com'
+MPDB_JSON = MPDB_ROOT + '/1/request.json?imdb_id=%s&api_key=p13x2&secret=%s&width=720&thumb_width=100'
+MPDB_SECRET = 'e3c77873abc4866d9e28277a9114c60c'
+
+
 
 # Constants that influence matching score on titles.
 # TODO - add these constants.
@@ -129,6 +135,7 @@ class PlexMovieAgent(Agent.Movies):
     """
     Log('RUSSIANMOVIE.update: START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
+    
     part = media.items[0].parts[0]
     filename = part.file.decode('utf-8')
     plexHash = part.plexHash
@@ -152,6 +159,7 @@ class PlexMovieAgent(Agent.Movies):
     if media and metadata.title is None:
       metadata.title = media.title
 
+    imdbId = None
     imdbData = None
     wikiImgUrl = None
     wikiPageUrl = WIKI_IDPAGE_URL % wikiId
@@ -172,6 +180,7 @@ class PlexMovieAgent(Agent.Movies):
       # Year.
       if 'year' in tmpResult:
         metadata.year = int(tmpResult['year'])
+        metadata.originally_available_at = Datetime.ParseDate('%s-01-01' % tmpResult['year']).date()
         Log('+++++++++++++++ metadata.year: ' + str(metadata.year))
 
       # Tagline.
@@ -238,19 +247,13 @@ class PlexMovieAgent(Agent.Movies):
 
       # Requesting more data from imdb if we have an id.
       if 'imdb_id' in tmpResult:
-        Log('+++++++++++++++ imdb.id: ' + tmpResult['imdb_id'])
-        imdbData = self.getDataFromImdb(tmpResult['imdb_id'])
+        imdbId = tmpResult['imdb_id']
+        Log('+++++++++++++++ imdb.id: ' + imdbId)
+        imdbData = self.getDataFromImdb(imdbId)
 
 
-    # Get the filename and the mod time.
-#    filename = media.items[0].parts[0].file.decode('utf-8')
-#    mod_time = os.path.getmtime(filename)
-#    date = datetime.date.fromtimestamp(mod_time)
-#    metadata.originally_available_at = Datetime.ParseDate(str(date)).date()
-#    metadata.originally_available_at = Datetime.ParseDate('2008-03-11').date()
 #    metadata.trivia = 'triviaaaaaaaaaaaaaaa'
 #    metadata.quotes = 'quotesssssssssssss'
-#    metadata.posters = {}
 
 
     if imdbData is not None:
@@ -261,21 +264,26 @@ class PlexMovieAgent(Agent.Movies):
 
 
     # Getting artwork.
-    self.fetchAndSetWikiArtwork(metadata, wikiImgUrl)
+    self.fetchAndSetWikiArtwork(metadata, wikiImgUrl, imdbId)
 
 #      LogChildren(metadata) ???????? Where is this method ?????????
 
     Log('RUSSIANMOVIE.update: FINISH <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
 
-  def fetchAndSetWikiArtwork(self, metadata, wikiImgFilename):
+  def fetchAndSetWikiArtwork(self, metadata, wikiImgFilename, imdbId):
+    """ Fetches images from the WIKI and other Internet sources.
+        If wikiImgFilename is passed, we fetch is and use it to set
+        movie art (metadata.art) value.
+        We borrowed MoviePosterDB code to try to load movie posters
+        using the imdb id if its present.
     """
-        Optional wikiImgFilename.
-    """
-    #        figure out why we need posters and art...
+    # TODO(zhenya): need to validate the size and proportions of the image.
+    # TODO(zhenya): look for other images on IMDB or Google if wikiImgFilename is not set?
     posters_valid_names = list()
     art_valid_names = list()
 
+    # Fetching an image from the wikipedia.
     if wikiImgFilename is not None:
       wikiImgQueryUrl = WIKI_QUERYFILE_URL % wikiImgFilename
       xmlResult = getXmlFromWikiApiPage(wikiImgQueryUrl)
@@ -295,79 +303,44 @@ class PlexMovieAgent(Agent.Movies):
         # TODO(zhenya): raise an error.
 
       thumbUrl = pathMatch[0].get('url')
-#      thumbUrl = 'http://www.ruslania.com/pictures/big/4607143860377.jpg'
       if thumbUrl is not None:
         url = thumbUrl
-        metadata.posters[url] = Proxy.Preview(HTTP.Request(thumbUrl, cacheTime=QUERY_CACHE_TIME), sort_order = 1)
-        posters_valid_names.append(url)
+        metadata.art[url] = Proxy.Preview(HTTP.Request(thumbUrl, cacheTime=QUERY_CACHE_TIME), sort_order = 1)
         art_valid_names.append(url)
+
+#      if posterUrl is not None:
+#        url = posterUrl
+#        metadata.posters[url] = Proxy.Preview(HTTP.Request(thumbUrl, cacheTime=QUERY_CACHE_TIME), sort_order = 1)
+#        posters_valid_names.append(url)
+
+    # Fetching movie posters using moviePosterDB code.
+    if imdbId is not None:
+      imdb_code = imdbId.replace('tt','').lstrip('t0')
+      self.moviePosterDBupdate(metadata, posters_valid_names, imdb_code)
 
     metadata.posters.validate_keys(posters_valid_names)
     metadata.art.validate_keys(art_valid_names)
 
 
-  def fetchArtworkI(self, metadata, media, lang):
-    imdb_code = metadata.id.lstrip('t0')
+  def moviePosterDBupdate(self, metadata, valid_names, imdb_code):
+    """ Code borowed from moviePosterDB.
+        Fetches and sets movie posters on the metadata object
+        given imdb id (w/o the 'tt' prefix).
+    """
     secret = Hash.MD5( ''.join([MPDB_SECRET, imdb_code]))[10:22]
     queryJSON = JSON.ObjectFromURL(MPDB_JSON % (imdb_code, secret), cacheTime=10)
-    valid_names = list()
 
     if not queryJSON.has_key('errors') and queryJSON.has_key('posters'):
       i = 0
-      valid_names = list()
-
       for poster in queryJSON['posters']:
         imageUrl = MPDB_ROOT + '/' + poster['image_location']
         thumbUrl = MPDB_ROOT + '/' + poster['thumbnail_location']
         full_image_url = imageUrl + '?api_key=p13x2&secret=' + secret
 
-        if poster['language'] == 'US':
+        if poster['language'] == 'RU':
           metadata.posters[full_image_url] = Proxy.Preview(HTTP.Request(thumbUrl), sort_order = i)
           valid_names.append(full_image_url)
           i += 1
-
-    metadata.posters.validate_keys(valid_names)
-
-  #Posters and arts
-  def fetchArtworkII(self):
-    posters_valid_names = list()
-    art_valid_names = list()
-
-    images = updateXMLresult.findall("images/image[@size='preview']")
-    indexImages = 1
-    for image in images:
-      def grapArts(metadata = metadata, image = image, indexImages = indexImages):
-        thumbUrl = image.get('url')
-        url = thumbUrl.replace("/preview/", "/main/")
-
-        type = image.get('type')
-        if (type == 'Poster'):
-          try:
-            #Check if main image exist
-            f = urllib2.urlopen(url)
-            test = f.info().gettype()
-
-            metadata.posters[url] = Proxy.Preview(HTTP.Request(thumbUrl, cacheTime=CP_CACHETIME_CP_FANART), sort_order = indexImages)
-            posters_valid_names.append(url)
-          except	Exception, e :
-            Log("[cine-passion Agent] : EXCEPT3 " + str(e))
-            Log('[cine-passion Agent] Error when fetching ' + thumbUrl + ' or '+ url)
-        elif (type == 'Fanart'):
-          try:
-            #Check if main image exist
-            f = urllib2.urlopen(url)
-            test = f.info().gettype()
-
-            metadata.art[url] = Proxy.Preview(HTTP.Request(thumbUrl, cacheTime=CP_CACHETIME_CP_FANART), sort_order = indexImages)
-            art_valid_names.append(url)
-          except	Exception, e :
-            Log("[cine-passion Agent] : EXCEPT4 " + str(e))
-            Log('[cine-passion Agent] Error when fetching ' + thumbUrl + ' or '+ url)
-      indexImages = indexImages + 1
-
-    #supress old unsued pictures
-    metadata.posters.validate_keys(posters_valid_names)
-    metadata.art.validate_keys(art_valid_names)
 
 
   def isBlank(self, string):
