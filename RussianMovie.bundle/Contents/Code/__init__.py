@@ -1,6 +1,6 @@
 import datetime, string, re, time, unicodedata, hashlib, urlparse, types
 
-WIKI_QUERY_URL = 'http://ru.wikipedia.org/w/api.php?action=query&list=search&srprop=timestamp&format=xml&srsearch=%s'
+WIKI_QUERY_URL = 'http://ru.wikipedia.org/w/api.php?action=query&list=search&srprop=timestamp&format=xml&srsearch=%s_(фильм)'
 WIKI_TITLEPAGE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=timestamp|user|comment|content&format=xml&titles=%s'
 WIKI_IDPAGE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=timestamp|user|comment|content&format=xml&pageids=%s'
 WIKI_QUERYFILE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=imageinfo&iiprop=url&format=xml&titles=Файл:%s'
@@ -20,27 +20,27 @@ MATCHER_FILM = re.compile(u'\{\{\u0424\u0438\u043B\u044C\u043C\s*(.*?)\s*^[^|]',
 # imdb ID: "| imdb_id = ".
 MATCHER_FILM_IMDBID = re.compile(u'^\s*\|\s*imdb_id\s*=\s*(\d+)\s*$', re.M)
 # Title: "| РусНаз = ".
-MATCHER_FILM_TITLE = re.compile(u'^\s*\|\s*\u0420\u0443\u0441\u041D\u0430\u0437\s*=\s*(.*?)\s*$', re.M | re.S)
+MATCHER_FILM_TITLE = re.compile(u'^\s*\|\s*\u0420\u0443\u0441\u041D\u0430\u0437\s*=\s*([^|]*?)\s*$', re.S | re.M)
 # Original title: "| ОригНаз = ".
-MATCHER_FILM_ORIGINAL_TITLE = re.compile(u'^\s*\|\s*\u041E\u0440\u0438\u0433\u041D\u0430\u0437\s*=\s*(.*?)\s*$', re.M | re.S)
+MATCHER_FILM_ORIGINAL_TITLE = re.compile(u'^\s*\|\s*\u041E\u0440\u0438\u0433\u041D\u0430\u0437\s*=\s*([^|]*?)\s*$', re.S)
 # Year: "| Год = ".
 MATCHER_FILM_YEAR = re.compile(u'^\s*\|\s*\u0413\u043E\u0434\s*=\s*(\d{4})\s*$', re.M)
 # Duration: a number after "| Время = ".
-MATCHER_FILM_DURATION = re.compile(u'^\s*\|\s*\u0412\u0440\u0435\u043C\u044F\s+=\s+(\d+)\s+.*$', re.M | re.S)
+MATCHER_FILM_DURATION = re.compile(u'^\s*\|\s*\u0412\u0440\u0435\u043C\u044F\s+=\s+(\d+)\s+.*$', re.S | re.M)
 # Studio: text after "| Компания = ".
-MATCHER_FILM_STUDIO = re.compile(u'^\s*\|\s*\u041A\u043E\u043C\u043F\u0430\u043D\u0438\u044F\s*=\s*(.*?)\s*$', re.S | re.M)
+MATCHER_FILM_STUDIO = re.compile(u'^\s*\|\s*\u041A\u043E\u043C\u043F\u0430\u043D\u0438\u044F\s*=\s*([^|]*?)\s*$', re.S | re.M)
 # Studio: filename after "| Изображение = ".
-MATCHER_FILM_IMAGE = re.compile(u'^\s*\|\s*\u0418\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435\s*=\s*(.*?)\s*$', re.S | re.M)
+MATCHER_FILM_IMAGE = re.compile(u'^\s*\|\s*\u0418\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435\s*=\s*([^|]*?)\s*$', re.S | re.M)
 # Genre: text after "| Жанр = ".
-MATCHER_FILM_GENRES = re.compile(u'^\s*\|\s*\u0416\u0430\u043D\u0440\s*=\s*(.*?)\s*$', re.S | re.M)
+MATCHER_FILM_GENRES = re.compile(u'^\s*\|\s*\u0416\u0430\u043D\u0440\s*=\s*([^|]*?)\s*$', re.S | re.M)
 # Directors: text after "| Режиссёр = ". 
-MATCHER_FILM_DIRECTORS = re.compile(u'^\s*\|\s*\u0420\u0435\u0436\u0438\u0441\u0441\u0451\u0440\s*=\s*(.*?)\s*$', re.S | re.M)
+MATCHER_FILM_DIRECTORS = re.compile(u'^\s*\|\s*\u0420\u0435\u0436\u0438\u0441\u0441\u0451\u0440\s*=\s*([^|]*?)\s*$', re.S | re.M)
 # Writers: text after "| Сценарист = ".
-MATCHER_FILM_WRITERS = re.compile(u'^\s*\|\s*\u0421\u0446\u0435\u043D\u0430\u0440\u0438\u0441\u0442\s*=\s*(.*?)\s*$', re.S | re.M)
+MATCHER_FILM_WRITERS = re.compile(u'^\s*\|\s*\u0421\u0446\u0435\u043D\u0430\u0440\u0438\u0441\u0442\s*=\s*([^|]*?)\s*$', re.S | re.M)
 # Actors: text after "| Актёры = ".
-MATCHER_FILM_ROLES = re.compile(u'^\s*\|\s*\u0410\u043A\u0442\u0451\u0440\u044B\s*=\s*(.*?)\s*$', re.S | re.M)
+MATCHER_FILM_ROLES = re.compile(u'^\s*\|\s*\u0410\u043A\u0442\u0451\u0440\u044B\s*=\s*([^|]*?)\s*$', re.S | re.M)
 # Country: text after "| Страна = ".
-MATCHER_FILM_COUNTRIES = re.compile(u'^\s*\|\s*\u0421\u0442\u0440\u0430\u043D\u0430\s*=\s*(.*?)$', re.S | re.M)
+MATCHER_FILM_COUNTRIES = re.compile(u'^\s*\|\s*\u0421\u0442\u0440\u0430\u043D\u0430\s*=\s*([^|]*?)$', re.S | re.M)
 # The summary - something in between "== Сюжет ==" and the next section.
 MATCHER_SUMMARY = re.compile(u'==\s\u0421\u044E\u0436\u0435\u0442\s==\s*\n(.+?)\n\s*==\s', re.S | re.M)
 
@@ -51,10 +51,12 @@ MPDB_JSON = MPDB_ROOT + '/1/request.json?imdb_id=%s&api_key=p13x2&secret=%s&widt
 MPDB_SECRET = 'e3c77873abc4866d9e28277a9114c60c'
 
 
+# TODO(zhenya): parse WIKI categories and make them optional via user preferences.
 
 # Constants that influence matching score on titles.
 # TODO - add these constants.
 
+# ruslania - good source of images and taglines?
 #      content = HTTP.Request('http://ruskino.ru/mov/search', params).content.strip()
 #      content = HTTP.Request('http://www.ozon.ru/?context=search&text=Место%20встречи%20изменить%20нельзя', None, {}, 360).content.strip()
 #      query = 'http://www.ozon.ru/?context=search&text=' + str.replace(titleMaybe, ' ', '%20')
@@ -161,100 +163,21 @@ class PlexMovieAgent(Agent.Movies):
 
     imdbId = None
     imdbData = None
-    wikiImgUrl = None
+    wikiImgName = None
     wikiPageUrl = WIKI_IDPAGE_URL % wikiId
-    tmpResult = self.getAndParseItemsWikiPage(wikiPageUrl)
+    tmpResult = self.getAndParseItemsWikiPage(wikiPageUrl, metadata)
     if tmpResult is not None:
       wikiContent = tmpResult['all']
-
-      # Title.
-      if 'title' in tmpResult:
-        metadata.title = tmpResult['title']
-        Log('+++++++++++++++ metadata.title: ' + metadata.title)
-
-      # Original title.
-      if 'original_title' in tmpResult:
-        metadata.original_title = tmpResult['original_title']
-        Log('+++++++++++++++ metadata.original_title: ' + metadata.original_title)
-
-      # Year.
-      if 'year' in tmpResult:
-        metadata.year = int(tmpResult['year'])
-        metadata.originally_available_at = Datetime.ParseDate('%s-01-01' % tmpResult['year']).date()
-        Log('+++++++++++++++ metadata.year: ' + str(metadata.year))
-
-      # Tagline.
-      metadata.tagline = ''
-        
-      # Summary.
-      if 'summary' in tmpResult:
-        metadata.summary = tmpResult['summary']
-        Log('+++++++++++++++ metadata.sumary: .........')
-
-      # Duration.
-      if 'duration' in tmpResult:
-        metadata.duration = int(tmpResult['duration'])
-        Log('+++++++++++++++ metadata.duration: ' + tmpResult['duration'])
-
-      # Studio.
-      if 'studio' in tmpResult:
-        metadata.studio = tmpResult['studio']
-        Log('+++++++++++++++ metadata.studio: ' + metadata.studio)
-
-      # Genres.
-      metadata.genres.clear()
-      if 'genres' in tmpResult:
-        for genre in tmpResult['genres']:
-          Log('+++++++++++++++ metadata.genre: ' + genre)
-          metadata.genres.add(genre)
-
-      # Directors.
-      metadata.directors.clear()
-      if 'directors' in tmpResult:
-        for director in tmpResult['directors']:
-          Log('+++++++++++++++ metadata.director: ' + director)
-          metadata.directors.add(director)
-
-      # Writers.
-      metadata.writers.clear()
-      if 'writers' in tmpResult:
-        for writer in tmpResult['writers']:
-          Log('+++++++++++++++ metadata.writer: ' + writer)
-          metadata.writers.add(writer)
-
-      # Actors.
-      metadata.roles.clear()
-      if 'roles' in tmpResult:
-        for actor in tmpResult['roles']:
-          Log('+++++++++++++++ metadata.actor: ' + actor)
-          role = metadata.roles.new()
-          role.role = 'Актер' # TODO(zhenya): find out the role.
-          role.actor = actor
-          # role.photo = person.get('thumb')  # TODO(zhenya): find out the pic.
-
-      # Countries.
-      metadata.countries.clear()
-      if 'countries' in tmpResult:
-        for country in tmpResult['countries']:
-          metadata.countries.add(country)
-          Log('+++++++++++++++ metadata.country: ' + country)
-
-      # Image.
       if 'image' in tmpResult:
-        wikiImgUrl = tmpResult['image']
-        Log('+++++++++++++++ wiki.image: ' + wikiImgUrl)
-
-
-      # Requesting more data from imdb if we have an id.
-      if 'imdb_id' in tmpResult:
+        wikiImgName = tmpResult['image']
+      if 'imdbId' in tmpResult:
         imdbId = tmpResult['imdb_id']
-        Log('+++++++++++++++ imdb.id: ' + imdbId)
         imdbData = self.getDataFromImdb(imdbId)
 
-
+    # Tagline.
+#    metadata.tagline = ''
 #    metadata.trivia = 'triviaaaaaaaaaaaaaaa'
 #    metadata.quotes = 'quotesssssssssssss'
-
 
     if imdbData is not None:
       # Content rating.
@@ -264,65 +187,65 @@ class PlexMovieAgent(Agent.Movies):
 
 
     # Getting artwork.
-    self.fetchAndSetWikiArtwork(metadata, wikiImgUrl, imdbId)
+    self.fetchAndSetWikiArtwork(metadata, wikiImgName, imdbId)
 
 #      LogChildren(metadata) ???????? Where is this method ?????????
 
     Log('RUSSIANMOVIE.update: FINISH <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
 
-  def fetchAndSetWikiArtwork(self, metadata, wikiImgFilename, imdbId):
-    """ Fetches images from the WIKI and other Internet sources.
-        If wikiImgFilename is passed, we fetch is and use it to set
-        movie art (metadata.art) value.
+  def fetchAndSetWikiArtwork(self, metadata, wikiImgName, imdbId):
+    """ Fetches images from the WIKI and other Internet sources to set
+        metadata.posters values.
         We borrowed MoviePosterDB code to try to load movie posters
-        using the imdb id if its present.
+        using the imdb id if its present. If imdb id is not set or
+        no images are found using MoviePosterDB, we use wikiImgName
+        (if it's set) to load a WIKI image.
     """
     # TODO(zhenya): need to validate the size and proportions of the image.
-    # TODO(zhenya): look for other images on IMDB or Google if wikiImgFilename is not set?
+    # TODO(zhenya): look for other images on IMDB or Google if wikiImgName is not set?
     posters_valid_names = list()
     art_valid_names = list()
+    try:
+      # Fetching movie posters using moviePosterDB code.
+      sortOrder = 0
+      if imdbId is not None:
+        imdb_code = imdbId.replace('tt','').lstrip('t0')
+        sortOrder = self.moviePosterDBupdate(metadata, posters_valid_names, imdb_code)
 
-    # Fetching an image from the wikipedia.
-    if wikiImgFilename is not None:
-      wikiImgQueryUrl = WIKI_QUERYFILE_URL % wikiImgFilename
-      xmlResult = getXmlFromWikiApiPage(wikiImgQueryUrl)
-      pathMatch = xmlResult.xpath('//api/query/pages/page')
-      if len(pathMatch) == 0:
-        Log('ERROR: unable to parse page "%s".' % wikiImgQueryUrl)
-        # TODO(zhenya): raise an error.
+      # Fetching an image from the wikipedia.
+      if wikiImgName is not None:
+        wikiImgQueryUrl = WIKI_QUERYFILE_URL % wikiImgName
+        xmlResult = getXmlFromWikiApiPage(wikiImgQueryUrl)
+        pathMatch = xmlResult.xpath('//api/query/pages/page')
+        if len(pathMatch) == 0:
+          Log('ERROR: unable to parse page "%s".' % wikiImgQueryUrl)
+          # TODO(zhenya): raise an error.
 
-      missing = pathMatch[0].get('missing')
-      if missing is not None:
-        Log('ERROR: file "%s" does not seem to exist.' % wikiImgFilename)
-        # TODO(zhenya): raise an error.
+        missing = pathMatch[0].get('missing')
+        if missing is not None:
+          Log('ERROR: file "%s" does not seem to exist.' % wikiImgName)
+          # TODO(zhenya): raise an error.
 
-      pathMatch = pathMatch[0].xpath('//imageinfo/ii')
-      if len(pathMatch) == 0:
-        Log('ERROR: image section is not found in a WIKI response.')
-        # TODO(zhenya): raise an error.
+        pathMatch = pathMatch[0].xpath('//imageinfo/ii')
+        if len(pathMatch) == 0:
+          Log('ERROR: image section is not found in a WIKI response.')
+          # TODO(zhenya): raise an error.
 
-      thumbUrl = pathMatch[0].get('url')
-      if thumbUrl is not None:
-        url = thumbUrl
-        metadata.art[url] = Proxy.Preview(HTTP.Request(thumbUrl, cacheTime=QUERY_CACHE_TIME), sort_order = 1)
-        art_valid_names.append(url)
-
-#      if posterUrl is not None:
-#        url = posterUrl
-#        metadata.posters[url] = Proxy.Preview(HTTP.Request(thumbUrl, cacheTime=QUERY_CACHE_TIME), sort_order = 1)
-#        posters_valid_names.append(url)
-
-    # Fetching movie posters using moviePosterDB code.
-    if imdbId is not None:
-      imdb_code = imdbId.replace('tt','').lstrip('t0')
-      self.moviePosterDBupdate(metadata, posters_valid_names, imdb_code)
+        thumbUrl = pathMatch[0].get('url')
+        if thumbUrl is not None:
+          url = thumbUrl
+          metadata.posters[url] = Proxy.Preview(HTTP.Request(thumbUrl, cacheTime=QUERY_CACHE_TIME), sort_order = sortOrder)
+          posters_valid_names.append(url)
+          Log('Setting a poster from wikipedia: "%s"' % url)
+    except:
+      Log('ERROR: unable to fetch art work.')
 
     metadata.posters.validate_keys(posters_valid_names)
     metadata.art.validate_keys(art_valid_names)
 
 
-  def moviePosterDBupdate(self, metadata, valid_names, imdb_code):
+  def moviePosterDBupdate(self, metadata, posters_valid_names, imdb_code):
     """ Code borowed from moviePosterDB.
         Fetches and sets movie posters on the metadata object
         given imdb id (w/o the 'tt' prefix).
@@ -330,22 +253,20 @@ class PlexMovieAgent(Agent.Movies):
     secret = Hash.MD5( ''.join([MPDB_SECRET, imdb_code]))[10:22]
     queryJSON = JSON.ObjectFromURL(MPDB_JSON % (imdb_code, secret), cacheTime=10)
 
+    i = 0
     if not queryJSON.has_key('errors') and queryJSON.has_key('posters'):
-      i = 0
       for poster in queryJSON['posters']:
         imageUrl = MPDB_ROOT + '/' + poster['image_location']
         thumbUrl = MPDB_ROOT + '/' + poster['thumbnail_location']
         full_image_url = imageUrl + '?api_key=p13x2&secret=' + secret
 
-        if poster['language'] == 'RU':
+        if poster['language'] == 'RU' or poster['language'] == 'US':
           metadata.posters[full_image_url] = Proxy.Preview(HTTP.Request(thumbUrl), sort_order = i)
-          valid_names.append(full_image_url)
+          posters_valid_names.append(full_image_url)
           i += 1
-
-
-  def isBlank(self, string):
-    return string == '' or string is None or not string
-
+          Log('Setting a poster from MPDB: "%s"' % imageUrl)
+    return i
+  
 
   def makeIdentifier(self, string):
     string = re.sub( r"\s+", " ", string.strip())
@@ -365,7 +286,7 @@ class PlexMovieAgent(Agent.Movies):
   def titleAndYearToId(self, title, year):
     if title is None:
       title = ''
-    if self.isBlank(year):
+    if isBlank(year):
       string = "%s" % self.makeIdentifier(title)
     else:
       string = "%s_%s" % (self.makeIdentifier(title).lower(), year)
@@ -447,17 +368,15 @@ class PlexMovieAgent(Agent.Movies):
     matcher = re.compile('\[\[([^\[\]]+?)\]\]', re.M | re.L)
     wikiText = matcher.sub(r'\1', wikiText)
 
+    # Removing even more brackets (file tags - "[[Файл...]]").
+    matcher = re.compile(u'\[\[\u0424\u0430\u0439\u043B[^\[\]]+?\]\]', re.M | re.L)
+    wikiText = matcher.sub('', wikiText)
+
+    # Removing even more brackets (file tags - "{{Длинное описание сюжета}}").
+    matcher = re.compile(u'\{\{[^\{\}]+?\}\}', re.M | re.L)
+    wikiText = matcher.sub('', wikiText)
+
     return wikiText
-
-
-  def parseFilmLineItems(self, line):
-    items = []
-    # Making all possible breaks to be the same before split.
-    line = line.replace('<br />', '<br/>')
-    line = line.replace('<br/>', '<br>')
-    for item in line.split('<br>'):
-      items.append(string.capwords(item.strip().strip(',')))
-    return items
 
 
   def parseWikiCountries(self, countriesStr):
@@ -469,22 +388,25 @@ class PlexMovieAgent(Agent.Movies):
     """
     # TODO(zhenya): implement this method.
     countries = []
-    #    countryCodes = self.parseFilmLineItems(countriesStr)
+    #    countryCodes = parseFilmLineItems(countriesStr)
     return countries
 
 
-  def getAndParseItemsWikiPage(self, wikiPageUrl):
+  def getAndParseItemsWikiPage(self, wikiPageUrl, metadata = None):
     """Given a WIKI page URL, gets it and parses its content.
 
-       Returns a dictionary with the following keys:
-         'id', 'title', 'original_title', 'year', 'studio', 'imdb_id',
-         'summary', 'image', 'duration', 'genres', 'directors',
-         'writers', 'roles', 'countries', 'score', 'film', and 'all'.
+       This method is used to determine score for a given wiki URL,
+       and also to write the fetched and parsed data into the
+       passed metadata object if it's present.
+
+       Returns None if there was an error or a dictionary with the
+       following key/value pairs:
+         'id', 'year', 'imdb_id', 'image', 'score', 'film', and 'all'.
        The later is the parsed and sanatized WIKI page content.
        Value for 'film' represents the {{Фильм}} tag if it's found.
-       All values are strings or arrays of strings.
+       All values are strings.
 
-       Score is value [0, 10] that indicates how good a match is.
+       Score is value [0, 15] that indicates how good a match is.
     """
     # TODO(zhenya): need to have two modes - full and partial (see where this method is being called from).
     # TODO(zhenya): move scoring out of this method.
@@ -492,6 +414,14 @@ class PlexMovieAgent(Agent.Movies):
     contentDict = {}
     score = 0
     try:
+      # First, clearing all metadata's lists if metadata present.
+      if metadata is not None:
+        metadata.genres.clear()
+        metadata.directors.clear()
+        metadata.writers.clear()
+        metadata.roles.clear()
+        metadata.countries.clear()
+      
       xmlResult = getXmlFromWikiApiPage(wikiPageUrl)
       pathMatch = xmlResult.xpath('//api/query/pages/page')
       if len(pathMatch) == 0:
@@ -515,121 +445,132 @@ class PlexMovieAgent(Agent.Movies):
       contentDict['all'] = sanitizedText
 
       # Parsing the summary.
-      match = MATCHER_SUMMARY.search(sanitizedText)
-      if match:
-        contentDict['summary'] = match.groups(1)[0]
+      summary = searchForMatch(MATCHER_SUMMARY, 'summary', sanitizedText)
+      if summary is not None:
         score += 1
+        if metadata is not None:
+          metadata.summary = summary
 
       # Looking for the {{Фильм}} tag.
       match = MATCHER_FILM.search(sanitizedText)
       year = None
       if match:
         filmContent = match.groups(1)[0]
-        filmContent = filmContent.strip('}}') # We might have a trailing '}}'.
-        Log('-------------------- filmContent: \n' + filmContent)
+        filmContent = filmContent.rstrip('}}') # We might have a trailing '}}'.
+        Log('    filmContent: \n' + filmContent)
         contentDict['film'] = filmContent
         score += 2
 
         # imdb: a number after "| imdb_id = "
-        match = MATCHER_FILM_IMDBID.search(filmContent)
-        if match:
-          Log('++++++++ IMDB_ID')
-          contentDict['imdb_id'] = match.groups(1)[0]
+        value = searchForMatch(MATCHER_FILM_IMDBID, 'imdb_id', filmContent, contentDict)
+        if value is not None:
           score += 1
 
         # Title: text after "| РусНаз = ".
-        match = MATCHER_FILM_TITLE.search(filmContent)
-        if match:
-          Log('++++++++ TITLE')
-          contentDict['title'] = match.groups(1)[0]
+        title = searchForMatch(MATCHER_FILM_TITLE, 'title', filmContent)
+        if title is not None:
           score += 1
+          if metadata is not None:
+            metadata.title = title
 
-        # Title: text after "| ОригНаз = ".
-        match = MATCHER_FILM_ORIGINAL_TITLE.search(filmContent)
-        if match:
-          Log('++++++++ ORIGINAL TITLE')
-          contentDict['original_title'] = match.groups(1)[0]
+        # Original title: text after "| ОригНаз = ".
+        title = searchForMatch(MATCHER_FILM_ORIGINAL_TITLE, 'original_title', filmContent)
+        if title is not None:
           score += 1
+          if metadata is not None:
+            metadata.original_title = title
 
         # Year: NNNN number after "| Год = ".
-        match = MATCHER_FILM_YEAR.search(filmContent)
-        if match:
-          Log('++++++++ YEAR')
-          year = match.groups(1)[0]
+        value = searchForMatch(MATCHER_FILM_YEAR, 'year', filmContent)
+        if value is not None:
           score += 1
+          year = value
+          # Year is set below.
 
         # Duration: a number after "| Время = ".
-        match = MATCHER_FILM_DURATION.search(filmContent)
-        if match:
-          Log('++++++++ DURATION')
-          contentDict['duration'] = str(int(match.groups(1)[0]) * 1000)
+        duration = searchForMatch(MATCHER_FILM_DURATION, 'duration', filmContent)
+        if duration is not None:
           score += 1
+          if metadata is not None:
+            metadata.duration = int(duration) * 1000
 
         # Studio: a number after "| Компания = ".
-        match = MATCHER_FILM_STUDIO.search(filmContent)
-        if match:
-          studio = match.groups(1)[0]
-          Log('++++++++ STUDIO')
-          # Removing annoying "по заказу..." if it's present.
-          matcher = re.compile(u'(.*?)\s*\u043F\u043E\s\u0437\u0430\u043A\u0430\u0437\u0443.*', re.M | re.L)
-          contentDict['studio'] = matcher.sub(r'\1', studio)
+        studios = searchForMatch(MATCHER_FILM_STUDIO, 'studio', filmContent, isMultiLine = True)
+        if studios is not None and len(studios) > 0:
           score += 1
+          if metadata is not None:
+            # Removing annoying "по заказу..." if it's present.
+            matcher = re.compile(u'(.*?)\s*\u043F\u043E\s\u0437\u0430\u043A\u0430\u0437\u0443.*', re.M | re.L)
+            # Only one studio is supported.
+            metadata.studio = matcher.sub(r'\1', studios[0])
 
         # Image: file name after "| Изображение = ".
-        match = MATCHER_FILM_IMAGE.search(filmContent)
-        if match:
-          Log('++++++++ IMAGE')
-          contentDict['image'] = match.groups(1)[0]
+        imageName = searchForMatch(MATCHER_FILM_IMAGE, 'image', filmContent, contentDict)
+        if imageName is not None:
           score += 1
 
         # Genre: "<br />" separated values after "| Жанр = ".
-        match = MATCHER_FILM_GENRES.search(filmContent)
-        if match:
-          Log('++++++++ GENRES')
-          contentDict['genres'] = self.parseFilmLineItems(match.groups(1)[0])
+        genres = searchForMatch(MATCHER_FILM_GENRES, 'genres', filmContent, isMultiLine = True)
+        if genres is not None and len(genres) > 0:
           score += 1
+          if metadata is not None:
+            for genre in genres:
+              metadata.genres.add(genre)
 
         # Directors: "<br />" separated values after "| Режиссёр = ".
-        match = MATCHER_FILM_DIRECTORS.search(filmContent)
-        if match:
-          Log('++++++++ DIRECTORS')
-          contentDict['directors'] = self.parseFilmLineItems(match.groups(1)[0])
+        directors = searchForMatch(MATCHER_FILM_DIRECTORS, 'directors', filmContent, isMultiLine = True)
+        if directors is not None and len(directors) > 0:
           score += 1
+          if metadata is not None:
+            for director in directors:
+              metadata.directors.add(director)
 
         # Writers: "<br />" separated values after "| Сценарист = ".
-        match = MATCHER_FILM_WRITERS.search(filmContent)
-        if match:
-          Log('++++++++ WRITERS')
-          contentDict['writers'] = self.parseFilmLineItems(match.groups(1)[0])
+        writers = searchForMatch(MATCHER_FILM_WRITERS, 'writers', filmContent, isMultiLine = True)
+        if writers is not None and len(writers) > 0:
           score += 1
+          if metadata is not None:
+            for writer in writers:
+              metadata.writers.add(writer)
 
         # Actors: "<br />" separated values after "| Актёры = ".
-        match = MATCHER_FILM_ROLES.search(filmContent)
-        if match:
-          Log('++++++++ ACTORS')
-          contentDict['roles'] = self.parseFilmLineItems(match.groups(1)[0])
+        roles = searchForMatch(MATCHER_FILM_ROLES, 'roles', filmContent, isMultiLine = True)
+        if roles is not None and len(roles) > 0:
           score += 1
+          if metadata is not None:
+            for actor in roles:
+              role = metadata.roles.new()
+              role.role = 'Актер' # TODO(zhenya): find out the role.
+              role.actor = actor
+              # role.photo = person.get('thumb')  # TODO(zhenya): find out the pic.
 
         # Country: "<br />" separated values after "| Страна = ".
-        match = MATCHER_FILM_COUNTRIES.search(filmContent)
-        if match:
-          contentDict['countries'] = self.parseWikiCountries(match.groups(1)[0])
+        countries = searchForMatch(MATCHER_FILM_COUNTRIES, 'countries', filmContent, isMultiLine = True)
+        if countries is not None and len(countries) > 0:
+          score += 1
+          # TODO(zhenya): Implement parsing countries.
+          # match = MATCHER_FILM_COUNTRIES.search(filmContent)
+          # if match:
+          # contentDict['countries'] = self.parseWikiCountries(match.groups(1)[0])
+
 
       # If there was no film tag, looking for year else where.
       if year is None:
-        match = MATCHER_FILM_YEAR.search(sanitizedText)
-        if match:
-          year = match.groups(1)[0]
-          score += 1
+        value = searchForMatch(MATCHER_FILM_YEAR, 'year', sanitizedText)
+        if value is not None:
+          year = value
       if year is not None:
         contentDict['year'] = year
+        if metadata is not None:
+          metadata.year = int(year)
 
     except:
       Log('ERROR: unable to parse wiki page!')
 
-    Log('getAndParseItemsWikiPage ++++++++ score ' + str(score) + ' for URL:\n' + wikiPageUrl)
+    Log(':::::::::::::::::::: score ' + str(score) + ' for URL:\n    ' + wikiPageUrl)
     contentDict['score'] = score
     return contentDict
+
 
   def findWikiPageMatches(self, info, results, lang):
     """ Using Wikipedia query API, tries to determine most probable pages
@@ -664,7 +605,7 @@ class PlexMovieAgent(Agent.Movies):
       orderPenalty = 0
       for match in pageMatches:
         orderPenalty += 4  # Score is diminishes as we move down the list.
-        score = 70 - orderPenalty
+        score = 60 - orderPenalty
         pageTitle = safe_unicode(match.get('title'))
         pageId = None
         titleYear = None
@@ -678,15 +619,15 @@ class PlexMovieAgent(Agent.Movies):
           if 'score' in tmpResult:
             score += int(tmpResult['score'] * 2.5)
 
-        if self.isBlank(pageId):
+        if isBlank(pageId):
           pageId = self.titleAndYearToId(pageTitle, yearFromFilename)
         if titleYear is None:
           # TODO(zhenya): maybe we shouldn't use the filename year?
-          if not self.isBlank(yearFromFilename):
+          if not isBlank(yearFromFilename):
             titleYear = int(yearFromFilename)
         else:
           # If year matches the year from filename, increase confidence.
-          if not self.isBlank(yearFromFilename):
+          if not isBlank(yearFromFilename):
             score += 5
         # Checking the title from filename with title in the match.
         score += self.compareTitles(titleFromFilename, pageTitle)
@@ -728,6 +669,10 @@ def getXmlFromWikiApiPage(wikiPageUrl):
   return XML.ElementFromURL(wikiPageUrl, headers=requestHeaders, cacheTime=QUERY_CACHE_TIME)
 
 
+def isBlank(string):
+  return string is None or not string or string.strip() == ''
+
+  
 def safe_unicode(s, encoding='utf-8'):
   if s is None:
     return None
@@ -738,3 +683,36 @@ def safe_unicode(s, encoding='utf-8'):
       return s.decode(encoding)
   else:
     return str(s).decode(encoding)
+
+
+def parseFilmLineItems(line):
+  items = []
+  # Making all possible breaks to be the same before split.
+  line = line.replace('<br />', '<br/>')
+  line = line.replace('<br/>', '<br>')
+  for item in line.split('<br>'):
+    items.append(string.capwords(item.strip().strip(',')))
+  return items
+
+
+def searchForMatch(matcher, key, text, dict=None, isMultiLine=False):
+  """ Searches for a match given a compiled matcher and text.
+      Parsed group 1 is returned if it's not blank; otherwise None is returned.
+      If dict is present, the value will be placed there for the provided key.
+  """
+  match = matcher.search(text)
+  if match:
+    value = match.groups(1)[0]
+    if not isBlank(value):
+      if isMultiLine:
+        values = parseFilmLineItems(value)
+        Log('::::::::::: metadata.%s: [%s]' % (key, ', '.join(values)))
+        return values
+      else:
+        Log('::::::::::: metadata.%s: %s' % (key, value[:30]))
+        if dict is not None:
+          dict[key] = value
+        return value
+  Log('::::::::::: metadata.%s: BLANK' % key)
+  return None
+  
