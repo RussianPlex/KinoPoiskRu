@@ -42,7 +42,7 @@ MATCHER_FILM_ROLES = re.compile(u'^\s*\|\s*\u0410\u043A\u0442\u0451\u0440\u044B\
 # Country: text after "| Страна = ".
 MATCHER_FILM_COUNTRIES = re.compile(u'^\s*\|\s*\u0421\u0442\u0440\u0430\u043D\u0430\s*=\s*([^|]*?)$', re.S | re.M)
 # The summary - something in between "== Сюжет ==" and the next section.
-MATCHER_SUMMARY = re.compile(u'==\s\u0421\u044E\u0436\u0435\u0442\s==\s*\n(.+?)\n\s*==\s', re.S | re.M)
+MATCHER_SUMMARY = re.compile(u'^==\s\u0421\u044E\u0436\u0435\u0442\s==\s*$\s*(.+?)\s*^==\s', re.S | re.M)
 
 
 # MoviePosterDB constants.
@@ -54,7 +54,12 @@ MPDB_SECRET = 'e3c77873abc4866d9e28277a9114c60c'
 # TODO(zhenya): parse WIKI categories and make them optional via user preferences.
 
 # Constants that influence matching score on titles.
-# TODO - add these constants.
+SCORE_ORDER_PENALTY = 3
+SCORE_WIKIMATCH_IMPORTANCE = 2
+SCORE_NOFILMDATA_PENALTY = 15
+SCORE_BADYEAR_PENALTY = 15
+SCORE_NOYEAR_PENALTY = 10
+SCORE_BADTITLE_PENALTY = 20
 
 # ruslania - good source of images and taglines?
 #      content = HTTP.Request('http://ruskino.ru/mov/search', params).content.strip()
@@ -97,31 +102,9 @@ class PlexMovieAgent(Agent.Movies):
 
     results.Sort('score', descending=True)
 
-    Log('got %d results' % len(results))
+    Log('SEARCH got %d results:' % len(results))
     for result in results:
-      if result.score > 100:
-        result.score = 100
-      elif result.score < 0:
-        result.score = 0
-      Log('  ... result: id=%s, name=%s, year=%d, score=%d' % (result.id, result.name, result.year, result.score))
-
-#    results[0].score = 100
-    # Duplicate matches are removed (by page ids).
-#    duplicateMatches = []
-#    resultMap = {}
-#    for result in results:
-#      if resultMap.has_key(result.id):
-#        duplicateMatches.append(result)
-#      else:
-#        resultMap[result.id] = True
-#
-#    for dupe in duplicateMatches:
-#      results.Remove(dupe)
-
-    # Make sure we're using the closest names.
-#    for result in results:
-#      Log("id=%s score=%s -> Best name being changed from %s to %s" % (result.id, result.score, result.name, bestNameMap[result.id]))
-#      result.name = bestNameMap[result.id]
+      Log('  ... result: id=%s, name=%s, year=%s, score=%d' % (result.id, result.name, str(result.year), result.score))
 
     Log('RUSSIANMOVIE.search: FINISH <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
@@ -340,22 +323,6 @@ class PlexMovieAgent(Agent.Movies):
     return {'year': year, 'title': title}
 
 
-  def compareTitles(self, titleFrom, titleTo):
-    """ Takes words from titleFrom string and checks
-        if the titleTo contains these words. For each
-        match, score is increased by 2. If no matches are
-        found -20 is returned.
-    """
-    score = 0
-    title = titleTo.lower()
-    for word in titleFrom.lower().split():
-      if title.find(word) >= 0:
-        score += 2
-    if score == 0:
-      score = -20
-    return score
-
-
   def sanitizeWikiText(self, wikiText):
     """Sanitizing wiki text to remove links (e.g. [[something]]).
     """
@@ -373,7 +340,7 @@ class PlexMovieAgent(Agent.Movies):
     wikiText = matcher.sub('', wikiText)
 
     # Removing even more brackets (file tags - "{{Длинное описание сюжета}}").
-    matcher = re.compile(u'\{\{[^\{\}]+?\}\}', re.M | re.L)
+    matcher = re.compile(u'\{\{\u0414\u043B\u0438\u043D\u043D\u043E\u0435[^\}]+?\}\}', re.M | re.L)
     wikiText = matcher.sub('', wikiText)
 
     return wikiText
@@ -414,13 +381,19 @@ class PlexMovieAgent(Agent.Movies):
     contentDict = {}
     score = 0
     try:
-      # First, clearing all metadata's lists if metadata present.
+      # First, clearing all metadata's properties and lists if metadata present.
       if metadata is not None:
         metadata.genres.clear()
         metadata.directors.clear()
         metadata.writers.clear()
         metadata.roles.clear()
         metadata.countries.clear()
+        metadata.studio = ''
+        metadata.summary = ''
+        metadata.title = ''
+        metadata.year = None
+        metadata.original_title = ''
+        metadata.duration = None
       
       xmlResult = getXmlFromWikiApiPage(wikiPageUrl)
       pathMatch = xmlResult.xpath('//api/query/pages/page')
@@ -447,7 +420,7 @@ class PlexMovieAgent(Agent.Movies):
       # Parsing the summary.
       summary = searchForMatch(MATCHER_SUMMARY, 'summary', sanitizedText)
       if summary is not None:
-        score += 1
+        score += 2
         if metadata is not None:
           metadata.summary = summary
 
@@ -553,11 +526,10 @@ class PlexMovieAgent(Agent.Movies):
           # if match:
           # contentDict['countries'] = self.parseWikiCountries(match.groups(1)[0])
 
-
       # If there was no film tag, looking for year else where.
       if year is None:
         value = searchForMatch(MATCHER_FILM_YEAR, 'year', sanitizedText)
-        if value is not None:
+        if value is not None:            
           year = value
       if year is not None:
         contentDict['year'] = year
@@ -572,7 +544,7 @@ class PlexMovieAgent(Agent.Movies):
     return contentDict
 
 
-  def findWikiPageMatches(self, info, results, lang):
+  def findWikiPageMatches(self, filenameInfo, results, lang):
     """ Using Wikipedia query API, tries to determine most probable pages
         for the media item we are looking for. The matches are added to the
         passed results list as MetadataSearchResult objects.
@@ -583,8 +555,8 @@ class PlexMovieAgent(Agent.Movies):
     try:
       pageMatches = []
       # TODO(zhenya): use year in the query.
-      yearFromFilename = info['year']
-      titleFromFilename = info['title']
+      yearFromFilename = filenameInfo['year']
+      titleFromFilename = filenameInfo['title']
       # TODO(zhenya): encode URL.
       wikiQueryUrl = WIKI_QUERY_URL % titleFromFilename
       xmlResult = getXmlFromWikiApiPage(wikiQueryUrl)
@@ -601,43 +573,29 @@ class PlexMovieAgent(Agent.Movies):
           pageMatches = xmlResult.xpath('//api/query/search/p')
 
       # Grabbing the first N results (in case if there are any).
-      counts = 0
-      orderPenalty = 0
+      matchOrder = 0
       for match in pageMatches:
-        orderPenalty += 4  # Score is diminishes as we move down the list.
-        score = 60 - orderPenalty
         pageTitle = safe_unicode(match.get('title'))
         pageId = None
         titleYear = None
         wikiPageUrl = WIKI_TITLEPAGE_URL % pageTitle
-        tmpResult = self.getAndParseItemsWikiPage(wikiPageUrl)
-        if tmpResult is not None:
-          if 'id' in tmpResult:
-            pageId = tmpResult['id']
-          if 'year' in tmpResult:
-            titleYear = int(tmpResult['year'])
-          if 'score' in tmpResult:
-            score += int(tmpResult['score'] * 2.5)
-
+        matchesMap = self.getAndParseItemsWikiPage(wikiPageUrl)
+        if matchesMap is not None:
+          if 'id' in matchesMap:
+            pageId = matchesMap['id']
+          if 'year' in matchesMap:
+            titleYear = int(matchesMap['year'])
         if isBlank(pageId):
           pageId = self.titleAndYearToId(pageTitle, yearFromFilename)
-        if titleYear is None:
-          # TODO(zhenya): maybe we shouldn't use the filename year?
-          if not isBlank(yearFromFilename):
-            titleYear = int(yearFromFilename)
-        else:
-          # If year matches the year from filename, increase confidence.
-          if not isBlank(yearFromFilename):
-            score += 5
-        # Checking the title from filename with title in the match.
-        score += self.compareTitles(titleFromFilename, pageTitle)
+
+        score = scoreMovieMatch(matchOrder, filenameInfo, pageTitle, matchesMap)
         results.Append(MetadataSearchResult(id = pageId,
                                             name = pageTitle,
-                                            year = int(titleYear),
+                                            year = titleYear,
                                             lang = lang,
                                             score = score))
-        counts += 1
-        if counts == WIKI_RESULTS_NUMBER:
+        matchOrder += 1
+        if matchOrder == WIKI_RESULTS_NUMBER:
           break # Got enough matches, stop.
     except:
       Log('ERROR: Unable to produce WIKI matches!')
@@ -660,6 +618,63 @@ class PlexMovieAgent(Agent.Movies):
     except:
       Log('ERROR: getting IMDB data')
     return imdbData
+
+
+def scoreMovieMatch(matchOrder, filenameInfo, pageTitle, matchesMap):
+  score = 60 # Starting score.
+  yearFromFilename = filenameInfo['year']
+  titleFromFilename = filenameInfo['title']
+
+  # Score is diminishes as we move down the list.
+  # TODO - take into consideration WIKI_RESULTS_NUMBER
+  orderPenalty = matchOrder * SCORE_ORDER_PENALTY
+  score = score - orderPenalty
+
+  # Adding matches from the wikipage (2 points for each find).
+  if 'score' in matchesMap:
+    wikiScore = int(matchesMap['score'])
+    if wikiScore == 0:
+      score = score - SCORE_NOFILMDATA_PENALTY
+    else:
+      score += int(wikiScore * SCORE_WIKIMATCH_IMPORTANCE)
+
+  # Wiki year matching year from filename is a good sign.
+  if 'year' in matchesMap:
+    yearFromWiki = matchesMap['year']
+    if yearFromWiki == yearFromFilename:
+      score += 20
+    elif abs(int(yearFromWiki) - int(yearFromFilename)) < 3:
+      score += 5 # Might be a mistake.
+    else:
+      score = score - SCORE_BADYEAR_PENALTY # If years don't match - penalize the score.
+  else:
+    score = score - SCORE_NOYEAR_PENALTY
+
+  # Checking the title from filename with title in the match.
+  score += compareTitles(titleFromFilename, pageTitle)
+
+  if score > 100:
+    score = 100
+  elif score < 0:
+    score = 0
+  
+  return score
+
+
+def compareTitles(titleFrom, titleTo):
+  """ Takes words from titleFrom string and checks
+      if the titleTo contains these words. For each
+      match, score is increased by 2. If no matches are
+      found SCORE_BADTITLE_PENALTY (-20) is returned.
+  """
+  score = 0
+  title = titleTo.lower()
+  for word in titleFrom.lower().split():
+    if title.find(word) >= 0:
+      score += 2
+  if score == 0:
+    score = score - SCORE_BADTITLE_PENALTY
+  return score
 
 
 def getXmlFromWikiApiPage(wikiPageUrl):
