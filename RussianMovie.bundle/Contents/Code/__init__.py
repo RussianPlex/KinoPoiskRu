@@ -1,4 +1,4 @@
-import datetime, string, re, time, unicodedata, hashlib, urlparse, types
+import datetime, string, os, re, time, unicodedata, hashlib, urlparse, types
 
 WIKI_QUERY_URL = 'http://ru.wikipedia.org/w/api.php?action=query&list=search&srprop=timestamp&format=xml&srsearch=%s_(фильм)'
 WIKI_TITLEPAGE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=timestamp|user|comment|content&format=xml&titles=%s'
@@ -12,7 +12,7 @@ WIKI_RESULTS_NUMBER = 5
 IMDB_TITLEPAGE_URL = 'http://www.imdb.com/title/tt%s'
 
 ############## Compiled regexes
-# The {{Фильм }} tag.
+# The {{Фильм }} tag. ##################################
 #MATCHER_FILM = re.compile(u'\{\{\u0424\u0438\u043B\u044C\u043C([^{}]*\{\{[^{}]*\}\}[^{}]*)\}\}\s*$', re.S | re.M)
 #MATCHER_FILM = re.compile(u'\{\{\u0424\u0438\u043B\u044C\u043C\s*(^\s*\|\s*.*$)^(\s*\}\}|[^\|])', re.S | re.M)
 MATCHER_FILM = re.compile(u'\{\{\u0424\u0438\u043B\u044C\u043C\s*(.*?)\s*^[^|]', re.S | re.M)
@@ -44,6 +44,20 @@ MATCHER_FILM_COUNTRIES = re.compile(u'^\s*\|\s*\u0421\u0442\u0440\u0430\u043D\u0
 # The summary - something in between "== Сюжет ==" and the next section.
 MATCHER_SUMMARY = re.compile(u'^==\s\u0421\u044E\u0436\u0435\u0442\s==\s*$\s*(.+?)\s*^==\s', re.S | re.M)
 
+# Filename regexes. ##################################
+MATCHER_FILENAME_SPACES = re.compile('(\s\s+|_+)', re.U)
+MATCHER_FILENAME_EXTENSION = re.compile('\.\w+$', re.U)
+# Filename's item info: the CD, film, серия, часть, etc. at the end (e.g. "- CD1").
+MATCHER_FILENAME_CDINFO = re.compile('\s*-\s*(\w*\s*\d{0,3}|\d{0,3}\w*\s*)$', re.U)
+# Filename's year: the parenthesized version.
+MATCHER_FILENAME_YEAR_PARENS = re.compile('\s*\(\s*(\d{4})\s*\)\s*', re.U)
+# Filename's year: year's on the left.
+MATCHER_FILENAME_YEAR_LEFT = re.compile('^\s*(\d{4})\s*-?\s*', re.U)
+# Filename's year: year's on the right.
+MATCHER_FILENAME_YEAR_RIGHT = re.compile('\s*-?\s*(\d{4})\s*$', re.U)
+
+
+MATCHER_FILENAME = re.compile('^\s*\(?\s*(\d{4})\s*\)?\s*\W*\s*(.*?)\s*\W*\s*(\d{0,3})$', re.U | re.I)
 
 # MoviePosterDB constants.
 MPDB_ROOT = 'http://movieposterdb.plexapp.com'
@@ -92,10 +106,16 @@ class PlexMovieAgent(Agent.Movies):
        and the score (how good we think the match is on the scale of 1 - 100).
     """
 
+    Log(': : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : :')
     Log('RUSSIANMOVIE.search: START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
     # Parse title and year from the filename.
-    info = self.parseItemInfoFromFilename(media)
+    part = media.items[0].parts[0]
+    filepath = part.file.decode('utf-8')
+    filename = os.path.basename(filepath)
+    info = self.parseTitleAndYearFromFilename(filename)
+    if info['title'] is None:
+      info['title'] = media.name
 
     # Looking for wiki pages for this title.
     self.findWikiPageMatches(info, results, lang)
@@ -166,7 +186,7 @@ class PlexMovieAgent(Agent.Movies):
       # Content rating.
       if 'rating' in imdbData:
         metadata.rating = float(imdbData['rating'])
-        # metadata.content_rating =  ??? what's this?
+        # metadata.content_rating =  G/PG/etc.
 
 
     # Getting artwork.
@@ -276,74 +296,45 @@ class PlexMovieAgent(Agent.Movies):
     return self.stringToId("%s" % string)
 
 
-  def parseItemInfoFromFilename(self, media):
+  def parseTitleAndYearFromFilename(self, filename):
     """Parses media item's title and year from the filename.
 
-       If this operation fails, title is set to filename and year to empty.
-       Returns an object with properties 'year' and 'title'.
+       If this operation fails, title is set to filename and
+       year to empty. Returns an object with properties 'year' and 'title'
+       (both might have None values).
     """
-    if media.name:
-      print 'media.name: ' + media.name
-    else:
-      print 'media.name: None'
-    if media.guid:
-      print 'media.guid: ' + media.guid
-    else:
-      print 'media.guid: None'
-    if media.title:
-      print 'media.title: ' + media.title
-    else:
-      print 'media.title: None'
-    if media.year:
-      print 'media.year: ' + media.year
-    else:
-      print 'media.year: None'
-    if media.id is None:
-      print 'media.id is None'
-    else:
-      print 'media.id: ' + media.id
+    Log('Parsing filename: "%s"' % filename)
+    year = None
+    title = None
 
-    year = ''
-    title = ''
-    match = re.search('^\s*([0-9]{4})[ \-_\.]+(.*?)[ \-_\.]*([0-9]{0,3})$', media.name)
+    # Removing file extension, stacking data (CD1, etc.),
+    # extra spaces, and underscores.
+    name = MATCHER_FILENAME_EXTENSION.sub('', filename)
+    name = MATCHER_FILENAME_SPACES.sub(' ', name)
+    name = MATCHER_FILENAME_CDINFO.sub('', name)
+
+    # Parsing and removing the parenthesized year if it's present.
+    # Note the order - it matters.
+    match = MATCHER_FILENAME_YEAR_PARENS.search(name)
     if match:
-      print 'RegEx::: match is found!'
       year = match.groups(1)[0]
-      title = match.groups(1)[1]
-    else:
-      print 'RegEx::: match is NOT found!'
+      name = MATCHER_FILENAME_YEAR_PARENS.sub(' ', name)
+    if year is None:
+      match = MATCHER_FILENAME_YEAR_LEFT.search(name)
+      if match:
+        year = match.groups(1)[0]
+        name = MATCHER_FILENAME_YEAR_LEFT.sub('', name)
+      else:
+        match = MATCHER_FILENAME_YEAR_RIGHT.search(name)
+        if match:
+          year = match.groups(1)[0]
+          name = MATCHER_FILENAME_YEAR_RIGHT.sub('', name)
 
-    if not title:
-      title = media.name
+    if not isBlank(name):
+      title = name.strip()
 
-
-    # TODO(zhenya): handle other cases (e.g. year is on the right...).
-
-    Log('Parsed from filename: title="' + title + '", year="' + year + '".')
+    Log('Parsed from filename: title="%s", year="%s"' % (str(title), str(year)))
     return {'year': year, 'title': title}
-
-
-  def sanitizeWikiText(self, wikiText):
-    """Sanitizing wiki text to remove links (e.g. [[something]]).
-    """
-    # This takes care of removing links and brackets around, for example,
-    # "[[link to something|something]]" would turn into just "something".
-    matcher = re.compile('\[\[([^\[\]]+?)\|([^\[\]]+?)\]\]', re.M | re.L)
-    wikiText = matcher.sub(r'\2', wikiText)
-
-    # This takes care of removing double brackets (e.g. [[something]]).
-    matcher = re.compile('\[\[([^\[\]]+?)\]\]', re.M | re.L)
-    wikiText = matcher.sub(r'\1', wikiText)
-
-    # Removing even more brackets (file tags - "[[Файл...]]").
-    matcher = re.compile(u'\[\[\u0424\u0430\u0439\u043B[^\[\]]+?\]\]', re.M | re.L)
-    wikiText = matcher.sub('', wikiText)
-
-    # Removing even more brackets (file tags - "{{Длинное описание сюжета}}").
-    matcher = re.compile(u'\{\{\u0414\u043B\u0438\u043D\u043D\u043E\u0435[^\}]+?\}\}', re.M | re.L)
-    wikiText = matcher.sub('', wikiText)
-
-    return wikiText
 
 
   def parseWikiCountries(self, countriesStr):
@@ -392,6 +383,7 @@ class PlexMovieAgent(Agent.Movies):
         metadata.summary = ''
         metadata.title = ''
         metadata.year = None
+        metadata.originally_available_at = None
         metadata.original_title = ''
         metadata.duration = None
       
@@ -414,7 +406,7 @@ class PlexMovieAgent(Agent.Movies):
 
       # This is the content of the entire page for our title.
       wikiText = safe_unicode(pathMatch[0].text)
-      sanitizedText = self.sanitizeWikiText(wikiText)
+      sanitizedText = sanitizeWikiText(wikiText)
       contentDict['all'] = sanitizedText
 
       # Parsing the summary.
@@ -422,7 +414,7 @@ class PlexMovieAgent(Agent.Movies):
       if summary is not None:
         score += 2
         if metadata is not None:
-          metadata.summary = summary
+          metadata.summary = sanitizeWikiTextMore(summary)
 
       # Looking for the {{Фильм}} tag.
       match = MATCHER_FILM.search(sanitizedText)
@@ -430,7 +422,7 @@ class PlexMovieAgent(Agent.Movies):
       if match:
         filmContent = match.groups(1)[0]
         filmContent = filmContent.rstrip('}}') # We might have a trailing '}}'.
-        Log('    filmContent: \n' + filmContent)
+#        Log('    filmContent: \n' + filmContent)
         contentDict['film'] = filmContent
         score += 2
 
@@ -535,6 +527,7 @@ class PlexMovieAgent(Agent.Movies):
         contentDict['year'] = year
         if metadata is not None:
           metadata.year = int(year)
+#          metadata.originally_available_at = Datetime.ParseDate('%s-01-01' % year).date()
 
     except:
       Log('ERROR: unable to parse wiki page!')
@@ -614,7 +607,10 @@ class PlexMovieAgent(Agent.Movies):
         MATCHER_IMDB_RATING = re.compile('class="rating-rating">(\d+\.\d+)<', re.M | re.S)
         match = MATCHER_IMDB_RATING.search(content)
         if match:
+          Log('% % % % % % rating: ' + match.groups(1)[0])
           imdbData['rating'] = match.groups(1)[0]
+        else:
+          Log('% % % % % % NO rating')
     except:
       Log('ERROR: getting IMDB data')
     return imdbData
@@ -641,12 +637,13 @@ def scoreMovieMatch(matchOrder, filenameInfo, pageTitle, matchesMap):
   # Wiki year matching year from filename is a good sign.
   if 'year' in matchesMap:
     yearFromWiki = matchesMap['year']
-    if yearFromWiki == yearFromFilename:
-      score += 20
-    elif abs(int(yearFromWiki) - int(yearFromFilename)) < 3:
-      score += 5 # Might be a mistake.
-    else:
-      score = score - SCORE_BADYEAR_PENALTY # If years don't match - penalize the score.
+    if yearFromFilename is not None:
+      if yearFromWiki == yearFromFilename:
+        score += 20
+      elif abs(int(yearFromWiki) - int(yearFromFilename)) < 3:
+        score += 5 # Might be a mistake.
+      else:
+        score = score - SCORE_BADYEAR_PENALTY # If years don't match - penalize the score.
   else:
     score = score - SCORE_NOYEAR_PENALTY
 
@@ -730,4 +727,37 @@ def searchForMatch(matcher, key, text, dict=None, isMultiLine=False):
         return value
   Log('::::::::::: metadata.%s: BLANK' % key)
   return None
-  
+
+def sanitizeWikiText(wikiText):
+  """ Generic sanitization of wiki text to remove bracket tags
+      or links, for example: "[[something]]" or "[[something|somethingelse]]".
+  """
+  # This takes care of removing links and brackets around, for example,
+  # "[[link to something|something]]" would turn into just "something".
+  matcher = re.compile('\[\[([^\[\]]+?)\|([^\[\]]+?)\]\]', re.M | re.L)
+  wikiText = matcher.sub(r'\2', wikiText)
+
+  # This takes care of removing double brackets (e.g. [[something]]).
+  matcher = re.compile('\[\[([^\[\]]+?)\]\]', re.M | re.L)
+  wikiText = matcher.sub(r'\1', wikiText)
+
+  # Removing even more brackets (file tags - "[[Файл...]]").
+#    matcher = re.compile(u'\[\[\u0424\u0430\u0439\u043B[^\[\]]+?\]\]', re.M | re.L)
+#    wikiText = matcher.sub('', wikiText)
+
+  return wikiText
+
+
+def sanitizeWikiTextMore(wikiText):
+  """ Does more sanitization of wiki text to remove other
+      wiki artifacts that are not remove by sanitizeWikiText().
+  """
+  # Removing brace tags, for example: "{{Длинное описание сюжета}}".
+  matcher = re.compile(u'\s*\{\{[^\}]+?\}\}', re.M | re.L)
+  wikiText = matcher.sub('', wikiText)
+
+  # Removing XML/HTML tags.
+  matcher = re.compile(u'\s*\<(?P<tagname>[a-zA-Z_]+)\s+.*?\</(?P=tagname)\>', re.M | re.U | re.I)
+  wikiText = matcher.sub('', wikiText)
+
+  return wikiText
