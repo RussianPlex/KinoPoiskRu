@@ -57,7 +57,9 @@ MATCHER_FILENAME_YEAR_LEFT = re.compile('^\s*(\d{4})\s*-?\s*', re.U)
 MATCHER_FILENAME_YEAR_RIGHT = re.compile('\s*-?\s*(\d{4})\s*$', re.U)
 
 
-MATCHER_FILENAME = re.compile('^\s*\(?\s*(\d{4})\s*\)?\s*\W*\s*(.*?)\s*\W*\s*(\d{0,3})$', re.U | re.I)
+# IMDB rating, something like this "<span class="rating-rating">5.0<span>".
+MATCHER_IMDB_RATING = re.compile('<span\s+class\s*=\s*"rating-rating">\s*(\d+\.\d+)\s*<span', re.M | re.S)
+
 
 # MoviePosterDB constants.
 MPDB_ROOT = 'http://movieposterdb.plexapp.com'
@@ -173,7 +175,7 @@ class PlexMovieAgent(Agent.Movies):
       wikiContent = tmpResult['all']
       if 'image' in tmpResult:
         wikiImgName = tmpResult['image']
-      if 'imdbId' in tmpResult:
+      if 'imdb_id' in tmpResult:
         imdbId = tmpResult['imdb_id']
         imdbData = self.getDataFromImdb(imdbId)
 
@@ -604,15 +606,15 @@ class PlexMovieAgent(Agent.Movies):
     try:
       content = HTTP.Request(IMDB_TITLEPAGE_URL % imdbId, cacheTime=QUERY_CACHE_TIME).content
       if content:
-        MATCHER_IMDB_RATING = re.compile('class="rating-rating">(\d+\.\d+)<', re.M | re.S)
         match = MATCHER_IMDB_RATING.search(content)
         if match:
-          Log('% % % % % % rating: ' + match.groups(1)[0])
-          imdbData['rating'] = match.groups(1)[0]
+          rating = match.groups(1)[0]
+          Log('Parsed IMDB rating: "%s"' % rating)
+          imdbData['rating'] = rating
         else:
-          Log('% % % % % % NO rating')
+          Log('IMDB rating is NOT found!')
     except:
-      Log('ERROR: getting IMDB data')
+      Log('ERROR: unable to fetch or parse IMDB data.')
     return imdbData
 
 
