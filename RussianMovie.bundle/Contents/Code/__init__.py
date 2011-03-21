@@ -184,22 +184,14 @@ class PlexMovieAgent(Agent.Movies):
         imdbId = tmpResult['imdb_id']
         imdbData = self.getDataFromImdb(imdbId)
 
-    # Tagline.
-#    metadata.tagline = ''
-#    metadata.trivia = 'triviaaaaaaaaaaaaaaa'
-#    metadata.quotes = 'quotesssssssssssss'
-
     if imdbData is not None:
       # Content rating.
       if 'rating' in imdbData:
         metadata.rating = float(imdbData['rating'])
         # metadata.content_rating =  G/PG/etc.
 
-
     # Getting artwork.
     self.fetchAndSetWikiArtwork(metadata, wikiImgName, imdbId)
-
-#      LogChildren(metadata) ???????? Where is this method ?????????
 
     Log('RUSSIANMOVIE.update: FINISH <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
@@ -389,6 +381,8 @@ class PlexMovieAgent(Agent.Movies):
         metadata.studio = ''
         metadata.summary = ''
         metadata.title = ''
+#        metadata.trivia = ''
+#        metadata.quotes = ''
         metadata.year = None
         metadata.originally_available_at = None
         metadata.original_title = ''
@@ -422,6 +416,12 @@ class PlexMovieAgent(Agent.Movies):
         score += 2
         if metadata is not None:
           metadata.summary = summary
+      # Adding "Интересные факты" when present to the summary.
+      facts = getWikiSectionContent(u'\u0418\u043D\u0442\u0435\u0440\u0435\u0441\u043D\u044B\u0435 \u0444\u0430\u043A\u0442\u044B', sanitizedText)
+      if facts is not None:
+        score += 1
+        if metadata is not None:
+          metadata.summary = metadata.summary + '\n\nИнтересные факты:\n' + facts
 
       # Looking for the {{Фильм}} tag.
       match = MATCHER_FILM.search(sanitizedText)
@@ -774,10 +774,10 @@ def sanitizeWikiTextMore(wikiText):
   wikiText = matcher.sub('', wikiText)
 
   # Removing XML/HTML tags.
-  matcher = re.compile(u'\s*\<(?P<tagname>[a-zA-Z_]+)\s+.*?\</(?P=tagname)\>', re.M | re.U | re.I)
+  matcher = re.compile(u'\s*\<(?P<tagname>[a-zA-Z_]+)(\>|\s).*?\</(?P=tagname)\>', re.M | re.U | re.I)
   wikiText = matcher.sub('', wikiText)
 
-  return wikiText
+  return wikiText.strip()
 
 
 def getWikiSectionContent(sectionTitle, wikiText):
