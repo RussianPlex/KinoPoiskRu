@@ -280,7 +280,7 @@ class PlexMovieAgent(Agent.Movies):
 
   def makeIdentifier(self, string):
     string = re.sub( r"\s+", " ", string.strip())
-    string = unicodedata.normalize('NFKD', safe_unicode(string))
+    string = unicodedata.normalize('NFKD', safeEncode(string))
     string = re.sub(r"['\"!?@#$&%^*\(\)_+\.,;:/]","", string)
     string = re.sub(r"[_ ]+","_", string)
     string = string.strip('_')
@@ -412,7 +412,7 @@ class PlexMovieAgent(Agent.Movies):
         return None
 
       # This is the content of the entire page for our title.
-      wikiText = safe_unicode(pathMatch[0].text)
+      wikiText = safeEncode(pathMatch[0].text)
       sanitizedText = sanitizeWikiText(wikiText)
       contentDict['all'] = sanitizedText
 
@@ -444,6 +444,16 @@ class PlexMovieAgent(Agent.Movies):
           score += 1
           if metadata is not None:
             metadata.title = title
+
+          # Fetching the tag line - something after triple-quoted title.
+          matcher = re.compile('^\'\'\'\W\s*' + title + '\s*\W\'\'\'\s*\W\s*(.*)$', re.U | re.I | re.M)
+          match = matcher.search(sanitizedText)
+          if match:
+            score += 1
+            if metadata is not None:
+              tagline = match.groups(1)[0].capitalize()
+              Log('::::::::::: tagline: %s...' % tagline[:40])
+              metadata.tagline = tagline
 
         # Original title: text after "| ОригНаз = ".
         title = searchForMatch(MATCHER_FILM_ORIGINAL_TITLE, 'original_title', filmContent)
@@ -571,7 +581,7 @@ class PlexMovieAgent(Agent.Movies):
       # Grabbing the first N results (in case if there are any).
       matchOrder = 0
       for match in pageMatches:
-        pageTitle = safe_unicode(match.get('title'))
+        pageTitle = safeEncode(match.get('title'))
         pageId = None
         titleYear = None
         wikiPageUrl = WIKI_TITLEPAGE_URL % pageTitle
@@ -688,7 +698,7 @@ def isBlank(string):
   return string is None or not string or string.strip() == ''
 
   
-def safe_unicode(s, encoding='utf-8'):
+def safeEncode(s, encoding='utf-8'):
   if s is None:
     return None
   if isinstance(s, basestring):
@@ -746,6 +756,10 @@ def sanitizeWikiText(wikiText):
 
   # Removing even more brackets (file tags - "[[Файл...]]").
   matcher = re.compile(u'\[\[\u0424\u0430\u0439\u043B[^\[\]]+?\]\]', re.M | re.L)
+  wikiText = matcher.sub('', wikiText)
+
+  # Removing acute characters.
+  matcher = re.compile(u'\u0301', re.U)
   wikiText = matcher.sub('', wikiText)
 
   return wikiText
