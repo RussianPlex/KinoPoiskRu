@@ -1,9 +1,14 @@
 import datetime, string, os, re, time, unicodedata, hashlib, urlparse, types
 
+# WIKIpedia URLs.
 WIKI_QUERY_URL = 'http://ru.wikipedia.org/w/api.php?action=query&list=search&srprop=timestamp&format=xml&srsearch=%s_(фильм)'
 WIKI_TITLEPAGE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=timestamp|user|comment|content&format=xml&titles=%s'
 WIKI_IDPAGE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=timestamp|user|comment|content&format=xml&pageids=%s'
 WIKI_QUERYFILE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=imageinfo&iiprop=url&format=xml&titles=Файл:%s'
+
+# Kina-Teatr.ru URLs.
+KTRU_QUERY_URL = 'http://www.kino-teatr.ru/search/'
+
 USER_AGENT = 'Plex RussianMovie Agent (+http://www.plexapp.com/) v.%s'
 AGENT_VERSION = '0.1'
 QUERY_CACHE_TIME = 3600
@@ -411,19 +416,19 @@ class PlexMovieAgent(Agent.Movies):
       sanitizedText = sanitizeWikiText(wikiText)
       contentDict['all'] = sanitizedText
 
-      # Parsing the summary.
-      summary = searchForMatch(MATCHER_SUMMARY, 'summary', sanitizedText)
+      # Parsing the summary (Сюжет).
+      summary = getWikiSectionContent(u'\u0421\u044E\u0436\u0435\u0442', sanitizedText)
       if summary is not None:
         score += 2
         if metadata is not None:
-          metadata.summary = sanitizeWikiTextMore(summary)
+          metadata.summary = summary
 
       # Looking for the {{Фильм}} tag.
       match = MATCHER_FILM.search(sanitizedText)
       year = None
       if match:
         filmContent = match.groups(1)[0]
-        filmContent = filmContent.rstrip('}}') # We might have a trailing '}}'.
+        filmContent = filmContent.rstrip('}}') # We might still have a trailing '}}'.
 #        Log('    filmContent: \n' + filmContent)
         contentDict['film'] = filmContent
         score += 2
@@ -505,11 +510,7 @@ class PlexMovieAgent(Agent.Movies):
         if roles is not None and len(roles) > 0:
           score += 1
           if metadata is not None:
-            for actor in roles:
-              role = metadata.roles.new()
-              role.role = 'Актер' # TODO(zhenya): find out the role.
-              role.actor = actor
-              # role.photo = person.get('thumb')  # TODO(zhenya): find out the pic.
+            parseActorsInfo(roles, metadata, sanitizedText)
 
         # Country: "<br />" separated values after "| Страна = ".
         countries = searchForMatch(MATCHER_FILM_COUNTRIES, 'countries', filmContent, isMultiLine = True)
@@ -720,14 +721,14 @@ def searchForMatch(matcher, key, text, dict=None, isMultiLine=False):
     if not isBlank(value):
       if isMultiLine:
         values = parseFilmLineItems(value)
-        Log('::::::::::: metadata.%s: [%s]' % (key, ', '.join(values)))
+        Log('::::::::::: %s: [%s]' % (key, ', '.join(values)))
         return values
       else:
-        Log('::::::::::: metadata.%s: %s' % (key, value[:30]))
+        Log('::::::::::: %s: %s' % (key, value[:40]))
         if dict is not None:
           dict[key] = value
         return value
-  Log('::::::::::: metadata.%s: BLANK' % key)
+  Log('::::::::::: %s: BLANK' % key)
   return None
 
 def sanitizeWikiText(wikiText):
@@ -740,12 +741,12 @@ def sanitizeWikiText(wikiText):
   wikiText = matcher.sub(r'\2', wikiText)
 
   # This takes care of removing double brackets (e.g. [[something]]).
-  matcher = re.compile('\[\[([^\[\]]+?)\]\]', re.M | re.L)
+  matcher = re.compile('\[\[([^\[\]]+?)\]\]', re.M | re.L | re.U)
   wikiText = matcher.sub(r'\1', wikiText)
 
   # Removing even more brackets (file tags - "[[Файл...]]").
-#    matcher = re.compile(u'\[\[\u0424\u0430\u0439\u043B[^\[\]]+?\]\]', re.M | re.L)
-#    wikiText = matcher.sub('', wikiText)
+  matcher = re.compile(u'\[\[\u0424\u0430\u0439\u043B[^\[\]]+?\]\]', re.M | re.L)
+  wikiText = matcher.sub('', wikiText)
 
   return wikiText
 
@@ -763,3 +764,32 @@ def sanitizeWikiTextMore(wikiText):
   wikiText = matcher.sub('', wikiText)
 
   return wikiText
+
+
+def getWikiSectionContent(sectionTitle, wikiText):
+  # TODO(zhenya): fix the last section case (when there is no other "==").
+  matcher = re.compile(u'^==\s' + sectionTitle + '\s==\s*$\s*(.+?)\s*^==\s', re.S | re.M | re.I)
+  match = matcher.search(wikiText)
+  if match:
+    content = sanitizeWikiTextMore(match.groups(1)[0])
+    if not isBlank(content): 
+      Log('::::::::::: section "%s": %s...' % (sectionTitle, content[:40]))
+      return content
+  return None
+
+
+def parseActorsInfo(roles, metadata, wikiText):
+  # Parsing the roles section (В ролях).
+  rolesSection = getWikiSectionContent(u'\u0412 \u0440\u043E\u043B\u044F\u0445', wikiText)
+  for actorName in roles:
+    role = metadata.roles.new()
+    role.actor = actorName
+    # When roles section available, find what role this actor played
+    if rolesSection is not None:
+      matcher = re.compile('^.*' + actorName + '\s+\S\s+(?P<quotes>\W+)(\w.*)(?P=quotes)$', re.U | re.M | re.I)
+      match = matcher.search(rolesSection)
+      if match:
+        role.role = match.groups(1)[1]
+      else:
+        role.role = 'Актер'
+    # role.photo = 'http:// todo...'
