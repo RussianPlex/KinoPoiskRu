@@ -18,12 +18,11 @@
 	<string>1.0</string>
 	<key>PlexAgentAttributionText</key>
 	<string>
-		    &lt;a href=&quot;http://www.freebase.com/&quot;&gt;Freebase&lt;/a&gt;, licensed under
-		    &lt;a href=&quot;http://creativecommons.org/licenses/by/2.5/&quot;&gt;CC-BY&lt;/a&gt;&lt;br/&gt;
-		    Other content from
-		    &lt;a href=&quot;http://en.wikipedia.org/&quot;&gt;Wikipedia&lt;/a&gt;,
-		    licensed under the &lt;a href=&quot;http://www.gnu.org/copyleft/fdl.html&quot;&gt;GFDL&lt;/a&gt;
-		  </string>
+    Агент для получения информации о медиа файлах с Русской ВИКИпедии
+    &lt;a href=&quot;http://ru.wikipedia.org/&quot;&gt;Wikipedia&lt;/a&gt;,
+    содержание которой защищается лицензией
+    &lt;a href=&quot;http://www.gnu.org/copyleft/fdl.html&quot;&gt;GFDL&lt;/a&gt;.
+  </string>
 	<key>PlexFrameworkVersion</key>
 	<string>2</string>
 	<key>PlexPluginClass</key>

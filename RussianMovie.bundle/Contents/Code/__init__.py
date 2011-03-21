@@ -1,27 +1,24 @@
 import datetime, string, os, re, time, unicodedata, hashlib, urlparse, types
 
+AGENT_VERSION = '0.1'
+USER_AGENT = 'Plex RussianMovie Agent (+http://www.plexapp.com/) v.%s' % AGENT_VERSION
+
+# Preference item names.
+PREF_CACHE_TIME_NAME = 'wikiru_pref_cache_time'
+PREF_MAX_RESULTS_NAME = 'wikiru_pref_wiki_results'
+PREF_CATEGORIES_NAME = 'wikiru_pref_ignore_categories'
+
 # WIKIpedia URLs.
 WIKI_QUERY_URL = 'http://ru.wikipedia.org/w/api.php?action=query&list=search&srprop=timestamp&format=xml&srsearch=%s_(фильм)'
 WIKI_TITLEPAGE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=timestamp|user|comment|content&format=xml&titles=%s'
 WIKI_IDPAGE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=timestamp|user|comment|content&format=xml&pageids=%s'
 WIKI_QUERYFILE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=imageinfo&iiprop=url&format=xml&titles=Файл:%s'
 
-# Kina-Teatr.ru URLs.
-KTRU_QUERY_URL = 'http://www.kino-teatr.ru/search/'
-
-USER_AGENT = 'Plex RussianMovie Agent (+http://www.plexapp.com/) v.%s'
-AGENT_VERSION = '0.1'
-QUERY_CACHE_TIME = 3600
-WIKI_RESULTS_NUMBER = 5
-
 IMDB_TITLEPAGE_URL = 'http://www.imdb.com/title/tt%s'
 
 ############## Compiled regexes
 # The {{Фильм }} tag. ##################################
-#MATCHER_FILM = re.compile(u'\{\{\u0424\u0438\u043B\u044C\u043C([^{}]*\{\{[^{}]*\}\}[^{}]*)\}\}\s*$', re.S | re.M)
-#MATCHER_FILM = re.compile(u'\{\{\u0424\u0438\u043B\u044C\u043C\s*(^\s*\|\s*.*$)^(\s*\}\}|[^\|])', re.S | re.M)
 MATCHER_FILM = re.compile(u'\{\{\u0424\u0438\u043B\u044C\u043C\s*(.*?)\s*^[^|]', re.S | re.M)
-#MATCHER_FILM = re.compile(u'\{\{\u0424\u0438\u043B\u044C\u043C(.*?)^\}\}$', re.S | re.M)
 # imdb ID: "| imdb_id = ".
 MATCHER_FILM_IMDBID = re.compile(u'^\s*\|\s*imdb_id\s*=\s*(\d+)\s*$', re.M)
 # Title: "| РусНаз = ".
@@ -61,18 +58,13 @@ MATCHER_FILENAME_YEAR_LEFT = re.compile('^\s*(\d{4})\s*-?\s*', re.U)
 # Filename's year: year's on the right.
 MATCHER_FILENAME_YEAR_RIGHT = re.compile('\s*-?\s*(\d{4})\s*$', re.U)
 
-
 # IMDB rating, something like this "<span class="rating-rating">5.0<span>".
 MATCHER_IMDB_RATING = re.compile('<span\s+class\s*=\s*"rating-rating">\s*(\d+\.\d+)\s*<span', re.M | re.S)
-
 
 # MoviePosterDB constants.
 MPDB_ROOT = 'http://movieposterdb.plexapp.com'
 MPDB_JSON = MPDB_ROOT + '/1/request.json?imdb_id=%s&api_key=p13x2&secret=%s&width=720&thumb_width=100'
 MPDB_SECRET = 'e3c77873abc4866d9e28277a9114c60c'
-
-
-# TODO(zhenya): parse WIKI categories and make them optional via user preferences.
 
 # Constants that influence matching score on titles.
 SCORE_ORDER_PENALTY = 3
@@ -89,16 +81,37 @@ SCORE_BADTITLE_PENALTY = 20
 # [might want to look into language/country stuff at some point]
 # param info here: http://code.google.com/apis/ajaxsearch/documentation/reference.html
 #
+# Kina-Teatr.ru URLs.
+#KTRU_QUERY_URL = 'http://www.kino-teatr.ru/search/'
 
 
 def Start():
-  HTTP.CacheTime = CACHE_1HOUR * 4
+  Log('START::::::::: %s' % USER_AGENT)
+  # Setting cache experation time.
+  prefCache = Prefs[PREF_CACHE_TIME_NAME]
+  if prefCache == "1 минута":
+    cacheExp = CACHE_1MINUTE
+  elif prefCache == "1 час":
+    cacheExp = CACHE_1HOUR
+  elif prefCache == "1 день":
+    cacheExp = CACHE_1DAY
+  elif prefCache == "1 неделя":
+    cacheExp = CACHE_1DAY
+  elif prefCache == "1 месяц":
+    cacheExp = CACHE_1MONTH
+  elif prefCache == "1 год":
+    cacheExp = CACHE_1MONTH * 12
+  else:
+    cacheExp = CACHE_1WEEK
+  HTTP.CacheTime = cacheExp
+  Log('PREF: Setting cache expiration to %d seconds (%s)' % (cacheExp, prefCache))
+  Log('PREF: WIKI max results is set to %s' % Prefs[PREF_MAX_RESULTS_NAME])
+  Log('PREF: Ignore WIKI categories is set to %s' % str(Prefs[PREF_CATEGORIES_NAME]))
+
 
 class PlexMovieAgent(Agent.Movies):
   name = 'RussianMovie'
-  print 'RussianMovie - ctor :START'
   languages = [Locale.Language.Russian]
-  print 'RussianMovie - ctor :END'
 
 
   ##############################################################################
@@ -147,7 +160,6 @@ class PlexMovieAgent(Agent.Movies):
     """
     Log('RUSSIANMOVIE.update: START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
-    
     part = media.items[0].parts[0]
     filename = part.file.decode('utf-8')
     plexHash = part.plexHash
@@ -175,7 +187,8 @@ class PlexMovieAgent(Agent.Movies):
     imdbData = None
     wikiImgName = None
     wikiPageUrl = WIKI_IDPAGE_URL % wikiId
-    tmpResult = self.getAndParseItemsWikiPage(wikiPageUrl, metadata, parseCategories = True)
+    parseCategories = not Prefs[PREF_CATEGORIES_NAME]
+    tmpResult = self.getAndParseItemsWikiPage(wikiPageUrl, metadata, parseCategories = parseCategories)
     if tmpResult is not None:
       wikiContent = tmpResult['all']
       if 'image' in tmpResult:
@@ -237,7 +250,7 @@ class PlexMovieAgent(Agent.Movies):
         thumbUrl = pathMatch[0].get('url')
         if thumbUrl is not None:
           url = thumbUrl
-          metadata.posters[url] = Proxy.Preview(HTTP.Request(thumbUrl, cacheTime=QUERY_CACHE_TIME), sort_order = sortOrder)
+          metadata.posters[url] = Proxy.Preview(HTTP.Request(thumbUrl), sort_order = sortOrder)
           posters_valid_names.append(url)
           Log('Setting a poster from wikipedia: "%s"' % url)
     except:
@@ -568,6 +581,7 @@ class PlexMovieAgent(Agent.Movies):
         determine page id, title year, and get the score.
     """
     try:
+      prefMaxResults = int(Prefs[PREF_MAX_RESULTS_NAME])
       pageMatches = []
       # TODO(zhenya): use year in the query.
       yearFromFilename = filenameInfo['year']
@@ -610,7 +624,7 @@ class PlexMovieAgent(Agent.Movies):
                                             lang = lang,
                                             score = score))
         matchOrder += 1
-        if matchOrder == WIKI_RESULTS_NUMBER:
+        if matchOrder == prefMaxResults:
           break # Got enough matches, stop.
     except:
       Log('ERROR: Unable to produce WIKI matches!')
@@ -624,7 +638,7 @@ class PlexMovieAgent(Agent.Movies):
     """
     imdbData = {}
     try:
-      content = HTTP.Request(IMDB_TITLEPAGE_URL % imdbId, cacheTime=QUERY_CACHE_TIME).content
+      content = HTTP.Request(IMDB_TITLEPAGE_URL % imdbId).content
       if content:
         match = MATCHER_IMDB_RATING.search(content)
         if match:
@@ -644,7 +658,6 @@ def scoreMovieMatch(matchOrder, filenameInfo, pageTitle, matchesMap):
   titleFromFilename = filenameInfo['title']
 
   # Score is diminishes as we move down the list.
-  # TODO - take into consideration WIKI_RESULTS_NUMBER
   orderPenalty = matchOrder * SCORE_ORDER_PENALTY
   score = score - orderPenalty
 
@@ -699,8 +712,8 @@ def compareTitles(titleFrom, titleTo):
 def getXmlFromWikiApiPage(wikiPageUrl):
   # TODO(zhenya): encode URL.
   wikiPageUrl = wikiPageUrl.replace(' ', '%20')
-  requestHeaders = { 'User-Agent': USER_AGENT % AGENT_VERSION }
-  return XML.ElementFromURL(wikiPageUrl, headers=requestHeaders, cacheTime=QUERY_CACHE_TIME)
+  requestHeaders = { 'User-Agent': USER_AGENT }
+  return XML.ElementFromURL(wikiPageUrl, headers=requestHeaders)
 
 
 def isBlank(string):
