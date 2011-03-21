@@ -175,7 +175,7 @@ class PlexMovieAgent(Agent.Movies):
     imdbData = None
     wikiImgName = None
     wikiPageUrl = WIKI_IDPAGE_URL % wikiId
-    tmpResult = self.getAndParseItemsWikiPage(wikiPageUrl, metadata)
+    tmpResult = self.getAndParseItemsWikiPage(wikiPageUrl, metadata, parseCategories = True)
     if tmpResult is not None:
       wikiContent = tmpResult['all']
       if 'image' in tmpResult:
@@ -349,7 +349,7 @@ class PlexMovieAgent(Agent.Movies):
     return countries
 
 
-  def getAndParseItemsWikiPage(self, wikiPageUrl, metadata = None):
+  def getAndParseItemsWikiPage(self, wikiPageUrl, metadata = None, parseCategories = False):
     """Given a WIKI page URL, gets it and parses its content.
 
        This method is used to determine score for a given wiki URL,
@@ -378,6 +378,7 @@ class PlexMovieAgent(Agent.Movies):
         metadata.writers.clear()
         metadata.roles.clear()
         metadata.countries.clear()
+        metadata.collections.clear()
         metadata.studio = ''
         metadata.summary = ''
         metadata.title = ''
@@ -409,6 +410,14 @@ class PlexMovieAgent(Agent.Movies):
       wikiText = safeEncode(pathMatch[0].text)
       sanitizedText = sanitizeWikiText(wikiText)
       contentDict['all'] = sanitizedText
+
+      # Parsing categories.
+      if parseCategories and metadata is not None:
+        # Looking for something like "Категория:Мосфильм"...
+        MATCHER_CATEGORY = re.compile(u'^\u041A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u044F:([\s\w]+)\s*$', re.M | re.U)
+        categories = MATCHER_CATEGORY.findall(sanitizedText)
+        for category in categories:
+          metadata.collections.add(category)
 
       # Parsing the summary (Сюжет).
       summary = getWikiSectionContent(u'\u0421\u044E\u0436\u0435\u0442', sanitizedText)
