@@ -538,7 +538,7 @@ class PlexMovieAgent(Agent.Movies):
         contentDict['year'] = year
         if metadata is not None:
           metadata.year = int(year)
-#          metadata.originally_available_at = Datetime.ParseDate('%s-01-01' % year).date()
+          metadata.originally_available_at = Datetime.ParseDate('%s-01-01' % year).date()
 
     except:
       Log('ERROR: unable to parse wiki page!')
@@ -745,6 +745,10 @@ def sanitizeWikiText(wikiText):
   """ Generic sanitization of wiki text to remove bracket tags
       or links, for example: "[[something]]" or "[[something|somethingelse]]".
   """
+  # Removing a few tags (file tags - "[[Файл...]]").
+  matcher = re.compile(u'\[\[\u0424\u0430\u0439\u043B[^\[\]]+?\]\]', re.M | re.L)
+  wikiText = matcher.sub('', wikiText)
+
   # This takes care of removing links and brackets around, for example,
   # "[[link to something|something]]" would turn into just "something".
   matcher = re.compile('\[\[([^\[\]]+?)\|([^\[\]]+?)\]\]', re.M | re.L)
@@ -753,10 +757,6 @@ def sanitizeWikiText(wikiText):
   # This takes care of removing double brackets (e.g. [[something]]).
   matcher = re.compile('\[\[([^\[\]]+?)\]\]', re.M | re.L | re.U)
   wikiText = matcher.sub(r'\1', wikiText)
-
-  # Removing even more brackets (file tags - "[[Файл...]]").
-  matcher = re.compile(u'\[\[\u0424\u0430\u0439\u043B[^\[\]]+?\]\]', re.M | re.L)
-  wikiText = matcher.sub('', wikiText)
 
   # Removing acute characters.
   matcher = re.compile(u'\u0301', re.U)
@@ -770,11 +770,17 @@ def sanitizeWikiTextMore(wikiText):
       wiki artifacts that are not remove by sanitizeWikiText().
   """
   # Removing brace tags, for example: "{{Длинное описание сюжета}}".
-  matcher = re.compile(u'\s*\{\{[^\}]+?\}\}', re.M | re.L)
+  matcher = re.compile('\s*\{\{[^\}]+?\}\}', re.M | re.L | re.U)
   wikiText = matcher.sub('', wikiText)
 
   # Removing XML/HTML tags.
-  matcher = re.compile(u'\s*\<(?P<tagname>[a-zA-Z_]+)(\>|\s).*?\</(?P=tagname)\>', re.M | re.U | re.I)
+  matcher = re.compile('\s*\<(?P<tagname>[a-zA-Z_]+)(\>|\s).*?\</(?P=tagname)\>', re.M | re.U | re.I)
+  wikiText = matcher.sub('', wikiText)
+  matcher = re.compile('\s*\<[a-zA-Z_]+\s+[^\>/]*?\s*/\>', re.M | re.U | re.I)
+  wikiText = matcher.sub('', wikiText)
+
+  # Other hardcoded tags.
+  matcher = re.compile('\</?poem\>', re.M | re.I)
   wikiText = matcher.sub('', wikiText)
 
   return wikiText.strip()
