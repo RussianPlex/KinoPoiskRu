@@ -1,7 +1,7 @@
 import datetime, string, os, re, time, unicodedata, hashlib, urlparse, types
 
 AGENT_VERSION = '0.1'
-USER_AGENT = 'Plex RussianMovie Agent (+http://www.plexapp.com/) v.%s' % AGENT_VERSION
+USER_AGENT = 'Plex WikipediaRu Metadata Agent (+http://www.plexapp.com/) v.%s' % AGENT_VERSION
 
 # Preference item names.
 PREF_CACHE_TIME_NAME = 'wikiru_pref_cache_time'
@@ -84,6 +84,7 @@ SCORE_BADTITLE_PENALTY = 20
 # Kina-Teatr.ru URLs.
 #KTRU_QUERY_URL = 'http://www.kino-teatr.ru/search/'
 
+# TODO(zhenya): clean up extraneous log statements.
 
 def Start():
   Log('START::::::::: %s' % USER_AGENT)
@@ -110,7 +111,7 @@ def Start():
 
 
 class PlexMovieAgent(Agent.Movies):
-  name = 'RussianMovie'
+  name = 'WikipediaRu'
   languages = [Locale.Language.Russian]
 
 
@@ -125,9 +126,6 @@ class PlexMovieAgent(Agent.Movies):
        For each results, we determine match's wiki page id, title, year,
        and the score (how good we think the match is on the scale of 1 - 100).
     """
-
-    Log(': : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : :')
-    Log('RUSSIANMOVIE.search: START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
     # Parse title and year from the filename.
     part = media.items[0].parts[0]
@@ -146,8 +144,6 @@ class PlexMovieAgent(Agent.Movies):
     for result in results:
       Log('  ... result: id=%s, name=%s, year=%s, score=%d' % (result.id, result.name, str(result.year), result.score))
 
-    Log('RUSSIANMOVIE.search: FINISH <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
-
 
   ##############################################################################
   ############################# U P D A T E ####################################
@@ -158,8 +154,6 @@ class PlexMovieAgent(Agent.Movies):
        it to fetch the page, which is going to be used to populate the
        media item record. Another field that could be used is metadata.title.
     """
-    Log('RUSSIANMOVIE.update: START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
-
     part = media.items[0].parts[0]
     filename = part.file.decode('utf-8')
     plexHash = part.plexHash
@@ -205,8 +199,6 @@ class PlexMovieAgent(Agent.Movies):
 
     # Getting artwork.
     self.fetchAndSetWikiArtwork(metadata, wikiImgName, imdbId)
-
-    Log('RUSSIANMOVIE.update: FINISH <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
 
   def fetchAndSetWikiArtwork(self, metadata, wikiImgName, imdbId):

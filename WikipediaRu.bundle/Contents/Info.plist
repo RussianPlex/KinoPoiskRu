@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>English</string>
+	<string>Russian</string>
 	<key>CFBundleExecutable</key>
-	<string>Russian Movie</string>
+	<string>Russian Movie Agent</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.plexapp.agents.russianmovie</string>
+	<string>com.plexapp.agents.wikipediaru</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleShortVersionString</key>
@@ -22,6 +22,8 @@
     &lt;a href=&quot;http://ru.wikipedia.org/&quot;&gt;Wikipedia&lt;/a&gt;,
     содержание которой защищается лицензией
     &lt;a href=&quot;http://www.gnu.org/copyleft/fdl.html&quot;&gt;GFDL&lt;/a&gt;.
+    Сайт разработчика &lt;b&gt;RussianPlex&lt;/b&gt; на:
+    &lt;a href=&quot;http://russianplex.sourceforge.net/&quot;&gt;SourceForge&lt;/a&gt;.
   </string>
 	<key>PlexFrameworkVersion</key>
 	<string>2</string>
