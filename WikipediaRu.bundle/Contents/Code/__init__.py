@@ -7,6 +7,7 @@ USER_AGENT = 'Plex WikipediaRu Metadata Agent (+http://www.plexapp.com/) v.%s' %
 PREF_CACHE_TIME_NAME = 'wikiru_pref_cache_time'
 PREF_MAX_RESULTS_NAME = 'wikiru_pref_wiki_results'
 PREF_CATEGORIES_NAME = 'wikiru_pref_ignore_categories'
+PREF_MIN_PAGE_SCORE = 'wikiru_pref_min_page_score'
 
 # WIKIpedia URLs.
 WIKI_QUERY_URL = 'http://ru.wikipedia.org/w/api.php?action=query&list=search&srprop=timestamp&format=xml&srsearch=%s_(фильм)'
@@ -107,6 +108,7 @@ def Start():
   HTTP.CacheTime = cacheExp
   Log('PREF: Setting cache expiration to %d seconds (%s)' % (cacheExp, prefCache))
   Log('PREF: WIKI max results is set to %s' % Prefs[PREF_MAX_RESULTS_NAME])
+  Log('PREF: Min page score is set to %s' % Prefs[PREF_MIN_PAGE_SCORE])
   Log('PREF: Ignore WIKI categories is set to %s' % str(Prefs[PREF_CATEGORIES_NAME]))
 
 
@@ -558,6 +560,7 @@ class PlexMovieAgent(Agent.Movies):
     """
     try:
       prefMaxResults = int(Prefs[PREF_MAX_RESULTS_NAME])
+      minPageScore = int(Prefs[PREF_MIN_PAGE_SCORE])
       pageMatches = []
       # TODO(zhenya): use year in the query.
       yearFromFilename = filenameInfo['year']
@@ -594,12 +597,13 @@ class PlexMovieAgent(Agent.Movies):
           pageId = self.titleAndYearToId(pageTitle, yearFromFilename)
 
         score = scoreMovieMatch(matchOrder, filenameInfo, pageTitle, matchesMap)
-        results.Append(MetadataSearchResult(id = pageId,
-                                            name = pageTitle,
-                                            year = titleYear,
-                                            lang = lang,
-                                            score = score))
-        matchOrder += 1
+        if score > minPageScore:  # Ignoring very low scored matches.
+          results.Append(MetadataSearchResult(id = pageId,
+                                              name = pageTitle,
+                                              year = titleYear,
+                                              lang = lang,
+                                              score = score))
+          matchOrder += 1
         if matchOrder == prefMaxResults:
           break # Got enough matches, stop.
     except:

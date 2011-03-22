@@ -14,6 +14,13 @@
     "default": "5"
   },
   {
+    "id": "wikiru_pref_min_page_score",
+    "label": "Минимальный рэйтинг",
+    "type": "enum",
+    "values": ["10", "20", "30", "40", "50"],
+    "default": "20"
+  },
+  {
 	  "id": "wikiru_pref_ignore_categories",
 		"label": "Игнорировать категории",
 		"type": "bool",
