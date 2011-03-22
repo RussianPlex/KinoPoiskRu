@@ -165,7 +165,6 @@ class PlexMovieAgent(Agent.Movies):
 
     matcher = re.compile(r'//(\d+)\?')
     match = matcher.search(metadata.guid)
-    wikiId = None
     if match:
       wikiId = match.groups(1)[0]
     else:
@@ -174,7 +173,6 @@ class PlexMovieAgent(Agent.Movies):
     # Set the title. FIXME, this won't work after a queued restart.
     # Only do this once, otherwise we'll pull new names that get edited
     # out of the database.
-    #
     if media and metadata.title is None:
       metadata.title = media.title
 
@@ -713,11 +711,12 @@ def safeEncode(s, encoding='utf-8'):
 
 def parseFilmLineItems(line):
   items = []
-  # Making all possible breaks to be the same before split.
-  line = line.replace('<br />', '<br/>')
-  line = line.replace('<br/>', '<br>')
-  for item in line.split('<br>'):
-    items.append(string.capwords(item.strip().strip(',')))
+  matcher = re.compile('\<br\s*/?\>')
+  if matcher.search(line):
+    line = line.replace(',', '') # When <br/> tags are there, commas are just removed.
+    line = matcher.sub(',', line)
+  for item in line.split(','):
+    items.append(string.capwords(item.strip()))
   return items
 
 
