@@ -35,7 +35,7 @@ MATCHER_FILM_STUDIO = re.compile(u'^\s*\|\s*\u041A\u043E\u043C\u043F\u0430\u043D
 MATCHER_FILM_IMAGE = re.compile(u'^\s*\|\s*\u0418\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435\s*=\s*([^|]*?)\s*$', re.S | re.M)
 # Genre: text after "| Жанр = ".
 MATCHER_FILM_GENRES = re.compile(u'^\s*\|\s*\u0416\u0430\u043D\u0440\s*=\s*([^|]*?)\s*$', re.S | re.M)
-# Directors: text after "| Режиссёр = ". 
+# Directors: text after "| Режиссёр = ".
 MATCHER_FILM_DIRECTORS = re.compile(u'^\s*\|\s*\u0420\u0435\u0436\u0438\u0441\u0441\u0451\u0440\s*=\s*([^|]*?)\s*$', re.S | re.M)
 # Writers: text after "| Сценарист = ".
 MATCHER_FILM_WRITERS = re.compile(u'^\s*\|\s*\u0421\u0446\u0435\u043D\u0430\u0440\u0438\u0441\u0442\s*=\s*([^|]*?)\s*$', re.S | re.M)
@@ -131,6 +131,8 @@ class PlexMovieAgent(Agent.Movies):
     part = media.items[0].parts[0]
     filepath = part.file.decode('utf-8')
     filename = os.path.basename(filepath)
+    Log('WikipediaRu.search: filename="%s"' % filename)
+
     info = self.parseTitleAndYearFromFilename(filename)
     if info['title'] is None:
       info['title'] = media.name
@@ -157,9 +159,7 @@ class PlexMovieAgent(Agent.Movies):
     part = media.items[0].parts[0]
     filename = part.file.decode('utf-8')
     plexHash = part.plexHash
-    Log('+++++++++++++++ media filename: ' + filename)
-    Log('+++++++++++++++ plexHash: ' + plexHash)
-    Log('+++++++++++++++ metadata.guid: ' + metadata.guid)
+    Log('WikipediaRu.update: filename="%s", plexHash="%s", guid="%s"' % (filename, plexHash, metadata.guid))
 
     matcher = re.compile(r'//(\d+)\?')
     match = matcher.search(metadata.guid)
@@ -167,8 +167,7 @@ class PlexMovieAgent(Agent.Movies):
     if match:
       wikiId = match.groups(1)[0]
     else:
-      Log('ERROR: no wiki id is found!')
-      raise Exception('no wiki id is found!')
+      raise Exception('ERROR: no wiki id is found!')
 
     # Set the title. FIXME, this won't work after a queued restart.
     # Only do this once, otherwise we'll pull new names that get edited
@@ -227,17 +226,17 @@ class PlexMovieAgent(Agent.Movies):
         pathMatch = xmlResult.xpath('//api/query/pages/page')
         if len(pathMatch) == 0:
           Log('ERROR: unable to parse page "%s".' % wikiImgQueryUrl)
-          # TODO(zhenya): raise an error.
+          raise Exception
 
         missing = pathMatch[0].get('missing')
         if missing is not None:
           Log('ERROR: file "%s" does not seem to exist.' % wikiImgName)
-          # TODO(zhenya): raise an error.
+          raise Exception
 
         pathMatch = pathMatch[0].xpath('//imageinfo/ii')
         if len(pathMatch) == 0:
           Log('ERROR: image section is not found in a WIKI response.')
-          # TODO(zhenya): raise an error.
+          raise Exception
 
         thumbUrl = pathMatch[0].get('url')
         if thumbUrl is not None:
@@ -273,7 +272,7 @@ class PlexMovieAgent(Agent.Movies):
           i += 1
           Log('Setting a poster from MPDB: "%s"' % imageUrl)
     return i
-  
+
 
   def makeIdentifier(self, string):
     string = re.sub( r"\s+", " ", string.strip())
@@ -341,19 +340,6 @@ class PlexMovieAgent(Agent.Movies):
     return {'year': year, 'title': title}
 
 
-  def parseWikiCountries(self, countriesStr):
-    """ Parses countries from a WIKI country Film tag. For example:
-          "{{SUN}} <br />{{UKR}}"
-          "{{Флаг Израиля}} Израиль<br />{{Флаг США}} США"
-          "СССР — Япония"
-        List of sanatized country names is returned.
-    """
-    # TODO(zhenya): implement this method.
-    countries = []
-    #    countryCodes = parseFilmLineItems(countriesStr)
-    return countries
-
-
   def getAndParseItemsWikiPage(self, wikiPageUrl, metadata = None, parseCategories = False):
     """Given a WIKI page URL, gets it and parses its content.
 
@@ -393,7 +379,7 @@ class PlexMovieAgent(Agent.Movies):
         metadata.originally_available_at = None
         metadata.original_title = ''
         metadata.duration = None
-      
+
       xmlResult = getXmlFromWikiApiPage(wikiPageUrl)
       pathMatch = xmlResult.xpath('//api/query/pages/page')
       if len(pathMatch) == 0:
@@ -540,15 +526,13 @@ class PlexMovieAgent(Agent.Movies):
         countries = searchForMatch(MATCHER_FILM_COUNTRIES, 'countries', filmContent, isMultiLine = True)
         if countries is not None and len(countries) > 0:
           score += 1
-          # TODO(zhenya): Implement parsing countries.
-          # match = MATCHER_FILM_COUNTRIES.search(filmContent)
-          # if match:
-          # contentDict['countries'] = self.parseWikiCountries(match.groups(1)[0])
+          if metadata is not None:
+            parseWikiCountries(countries, metadata)
 
       # If there was no film tag, looking for year else where.
       if year is None:
         value = searchForMatch(MATCHER_FILM_YEAR, 'year', sanitizedText)
-        if value is not None:            
+        if value is not None:
           year = value
       if year is not None:
         contentDict['year'] = year
@@ -578,29 +562,29 @@ class PlexMovieAgent(Agent.Movies):
       # TODO(zhenya): use year in the query.
       yearFromFilename = filenameInfo['year']
       titleFromFilename = filenameInfo['title']
-      # TODO(zhenya): encode URL.
-      wikiQueryUrl = WIKI_QUERY_URL % titleFromFilename
-      xmlResult = getXmlFromWikiApiPage(wikiQueryUrl)
+      queryStr = titleFromFilename
+      if yearFromFilename is not None:
+        queryStr += '_' + yearFromFilename
+      xmlResult = getXmlFromWikiApiPage(WIKI_QUERY_URL % queryStr)
       pathMatch = xmlResult.xpath('//api/query/searchinfo')
       if len(pathMatch) == 0:
-        # TODO(zhenya): raise an error?
         Log('ERROR: searchinfo is not found in a WIKI response.')
+        raise Exception
       else:
-        totalhits = pathMatch[0].get('totalhits')
-        if int(totalhits) == 0:
+        if pathMatch[0].get('totalhits') == '0':
           # TODO - implement case
-          Log('INFO: No hits found! Getting a suggestion...')
+          Log('INFO: No hits found! Getting a suggestion... NOT SUPPORTED YET!')
+          raise Exception
         else:
           pageMatches = xmlResult.xpath('//api/query/search/p')
 
-      # Grabbing the first N results (in case if there are any).
+      # Grabbing the first N results (if there are any).
       matchOrder = 0
       for match in pageMatches:
         pageTitle = safeEncode(match.get('title'))
         pageId = None
         titleYear = None
-        wikiPageUrl = WIKI_TITLEPAGE_URL % pageTitle
-        matchesMap = self.getAndParseItemsWikiPage(wikiPageUrl)
+        matchesMap = self.getAndParseItemsWikiPage(WIKI_TITLEPAGE_URL % pageTitle)
         if matchesMap is not None:
           if 'id' in matchesMap:
             pageId = matchesMap['id']
@@ -681,7 +665,7 @@ def scoreMovieMatch(matchOrder, filenameInfo, pageTitle, matchesMap):
     score = 100
   elif score < 0:
     score = 0
-  
+
   return score
 
 
@@ -702,8 +686,7 @@ def compareTitles(titleFrom, titleTo):
 
 
 def getXmlFromWikiApiPage(wikiPageUrl):
-  # TODO(zhenya): encode URL.
-  wikiPageUrl = wikiPageUrl.replace(' ', '%20')
+  wikiPageUrl = wikiPageUrl.replace(' ', '%20')  # TODO(zhenya): encode the whole URL?
   requestHeaders = { 'User-Agent': USER_AGENT }
   return XML.ElementFromURL(wikiPageUrl, headers=requestHeaders)
 
@@ -711,7 +694,7 @@ def getXmlFromWikiApiPage(wikiPageUrl):
 def isBlank(string):
   return string is None or not string or string.strip() == ''
 
-  
+
 def safeEncode(s, encoding='utf-8'):
   if s is None:
     return None
@@ -800,7 +783,7 @@ def getWikiSectionContent(sectionTitle, wikiText):
   match = matcher.search(wikiText)
   if match:
     content = sanitizeWikiTextMore(match.groups(1)[0])
-    if not isBlank(content): 
+    if not isBlank(content):
       Log('::::::::::: section "%s": %s...' % (sectionTitle, content[:40]))
       return content
   return None
@@ -821,3 +804,19 @@ def parseActorsInfo(roles, metadata, wikiText):
       else:
         role.role = 'Актер'
     # role.photo = 'http:// todo...'
+
+
+def parseWikiCountries(countriesStr, metadata):
+  """ Parses countries from a WIKI country Film tag. For example:
+        "{{SUN}} <br />{{UKR}}"
+        "{{Флаг Израиля}} Израиль<br />{{Флаг США}} США"
+        "СССР — Япония"
+      List of sanatized country names is returned.
+  """
+  # TODO(zhenya): implement this method.
+  #countries = []
+  # TODO(zhenya): Implement parsing countries.
+  # match = MATCHER_FILM_COUNTRIES.search(filmContent)
+  # if match:
+  #    countryCodes = parseFilmLineItems(countriesStr)
+  pass
