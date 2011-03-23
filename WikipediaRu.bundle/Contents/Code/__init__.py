@@ -3,13 +3,13 @@ import datetime, string, os, re, time, unicodedata, hashlib, urlparse, types
 AGENT_VERSION = '0.1'
 USER_AGENT = 'Plex WikipediaRu Metadata Agent (+http://www.plexapp.com/) v.%s' % AGENT_VERSION
 
-# Preference item names.
+##############  Preference item names.
 PREF_CACHE_TIME_NAME = 'wikiru_pref_cache_time'
 PREF_MAX_RESULTS_NAME = 'wikiru_pref_wiki_results'
 PREF_CATEGORIES_NAME = 'wikiru_pref_ignore_categories'
 PREF_MIN_PAGE_SCORE = 'wikiru_pref_min_page_score'
 
-# WIKIpedia URLs.
+##############  WIKIpedia URLs.
 WIKI_QUERY_URL = 'http://ru.wikipedia.org/w/api.php?action=query&list=search&srprop=timestamp&format=xml&srsearch=%s_(фильм)'
 WIKI_TITLEPAGE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=timestamp|user|comment|content&format=xml&titles=%s'
 WIKI_IDPAGE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=timestamp|user|comment|content&format=xml&pageids=%s'
@@ -18,36 +18,16 @@ WIKI_QUERYFILE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=imagei
 IMDB_TITLEPAGE_URL = 'http://www.imdb.com/title/tt%s'
 
 ############## Compiled regexes
-# The {{Фильм }} tag. ##################################
+# The {{Фильм }} tag.
 MATCHER_FILM = re.compile(u'\{\{\u0424\u0438\u043B\u044C\u043C\s*(.*?)\s*^[^|]', re.S | re.M)
-# imdb ID: "| imdb_id = ".
-MATCHER_FILM_IMDBID = re.compile(u'^\s*\|\s*imdb_id\s*=\s*(\d+)\s*$', re.M)
-# Title: "| РусНаз = ".
-MATCHER_FILM_TITLE = re.compile(u'^\s*\|\s*\u0420\u0443\u0441\u041D\u0430\u0437\s*=\s*([^|]*?)\s*$', re.S | re.M)
-# Original title: "| ОригНаз = ".
-MATCHER_FILM_ORIGINAL_TITLE = re.compile(u'^\s*\|\s*\u041E\u0440\u0438\u0433\u041D\u0430\u0437\s*=\s*([^|]*?)\s*$', re.S)
-# Year: "| Год = ".
-MATCHER_FILM_YEAR = re.compile(u'^\s*\|\s*\u0413\u043E\u0434\s*=\s*(\d{4})\s*$', re.M)
-# Duration: a number after "| Время = ".
-MATCHER_FILM_DURATION = re.compile(u'^\s*\|\s*\u0412\u0440\u0435\u043C\u044F\s+=\s+(\d+)\s+.*$', re.S | re.M)
-# Studio: text after "| Компания = ".
-MATCHER_FILM_STUDIO = re.compile(u'^\s*\|\s*\u041A\u043E\u043C\u043F\u0430\u043D\u0438\u044F\s*=\s*([^|]*?)\s*$', re.S | re.M)
-# Studio: filename after "| Изображение = ".
-MATCHER_FILM_IMAGE = re.compile(u'^\s*\|\s*\u0418\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435\s*=\s*([^|]*?)\s*$', re.S | re.M)
-# Genre: text after "| Жанр = ".
-MATCHER_FILM_GENRES = re.compile(u'^\s*\|\s*\u0416\u0430\u043D\u0440\s*=\s*([^|]*?)\s*$', re.S | re.M)
-# Directors: text after "| Режиссёр = ".
-MATCHER_FILM_DIRECTORS = re.compile(u'^\s*\|\s*\u0420\u0435\u0436\u0438\u0441\u0441\u0451\u0440\s*=\s*([^|]*?)\s*$', re.S | re.M)
-# Writers: text after "| Сценарист = ".
-MATCHER_FILM_WRITERS = re.compile(u'^\s*\|\s*\u0421\u0446\u0435\u043D\u0430\u0440\u0438\u0441\u0442\s*=\s*([^|]*?)\s*$', re.S | re.M)
-# Actors: text after "| Актёры = ".
-MATCHER_FILM_ROLES = re.compile(u'^\s*\|\s*\u0410\u043A\u0442\u0451\u0440\u044B\s*=\s*([^|]*?)\s*$', re.S | re.M)
-# Country: text after "| Страна = ".
-MATCHER_FILM_COUNTRIES = re.compile(u'^\s*\|\s*\u0421\u0442\u0440\u0430\u043D\u0430\s*=\s*([^|]*?)$', re.S | re.M)
-# The summary - something in between "== Сюжет ==" and the next section.
-MATCHER_SUMMARY = re.compile(u'^==\s\u0421\u044E\u0436\u0435\u0442\s==\s*$\s*(.+?)\s*^==\s', re.S | re.M)
+# IMDB rating, something like this "<span class="rating-rating">5.0<span>".
+MATCHER_IMDB_RATING = re.compile('<span\s+class\s*=\s*"rating-rating">\s*(\d+\.\d+)\s*<span', re.M | re.S)
+MATCHER_FIRST_INTEGER = re.compile('\s*(\d+)\s*\D*', re.U)
+MATCHER_FIRST_LETTER = re.compile('^\w', re.U)
+# Year: some number after " Год ".
+MATCHER_SOME_YEAR = re.compile(u'\b\u0413\u043E\u0434\b.*\D(\d{4})\D.*', re.U | re.I)
 
-# Filename regexes. ##################################
+# Filename regexes.
 MATCHER_FILENAME_SPACES = re.compile('(\s\s+|_+)', re.U)
 MATCHER_FILENAME_EXTENSION = re.compile('\.\w+$', re.U)
 # Filename's item info: the CD, film, серия, часть, etc. at the end (e.g. "- CD1").
@@ -59,15 +39,12 @@ MATCHER_FILENAME_YEAR_LEFT = re.compile('^\s*(\d{4})\s*-?\s*', re.U)
 # Filename's year: year's on the right.
 MATCHER_FILENAME_YEAR_RIGHT = re.compile('\s*-?\s*(\d{4})\s*$', re.U)
 
-# IMDB rating, something like this "<span class="rating-rating">5.0<span>".
-MATCHER_IMDB_RATING = re.compile('<span\s+class\s*=\s*"rating-rating">\s*(\d+\.\d+)\s*<span', re.M | re.S)
-
-# MoviePosterDB constants.
+############## MoviePosterDB constants.
 MPDB_ROOT = 'http://movieposterdb.plexapp.com'
 MPDB_JSON = MPDB_ROOT + '/1/request.json?imdb_id=%s&api_key=p13x2&secret=%s&width=720&thumb_width=100'
 MPDB_SECRET = 'e3c77873abc4866d9e28277a9114c60c'
 
-# Constants that influence matching score on titles.
+############## Constants that influence matching score on titles.
 SCORE_ORDER_PENALTY = 3
 SCORE_WIKIMATCH_IMPORTANCE = 2
 SCORE_NOFILMDATA_PENALTY = 15
@@ -434,50 +411,53 @@ class PlexMovieAgent(Agent.Movies):
         score += 2
 
         # imdb: a number after "| imdb_id = "
-        value = searchForMatch(MATCHER_FILM_IMDBID, 'imdb_id', filmContent, contentDict)
+        value = searchForFilmTagMatch('imdb_id', 'imdb_id', filmContent, contentDict)
         if value is not None:
           score += 1
 
         # Title: text after "| РусНаз = ".
-        title = searchForMatch(MATCHER_FILM_TITLE, 'title', filmContent)
+        title = searchForFilmTagMatch(u'\u0420\u0443\u0441\u041D\u0430\u0437', 'title', filmContent)
         if title is not None:
           score += 1
           if metadata is not None:
             metadata.title = title
 
-          # Fetching the tag line - something after triple-quoted title.
-          matcher = re.compile('^\'\'\'\W\s*' + title + '\s*\W\'\'\'\s*\W\s*(.*)$', re.U | re.I | re.M)
-          match = matcher.search(sanitizedText)
-          if match:
-            score += 1
-            if metadata is not None:
-              tagline = match.groups(1)[0].capitalize()
-              Log('::::::::::: tagline: %s...' % tagline[:40])
-              metadata.tagline = tagline
+        # Fetching the tag line - something after triple-quoted title.
+        # Example: '''Камень желаний''' (tagline content... 
+        matcher = re.compile('^\'\'\'\W?\s*' + title + '\s*\W?\'\'\'(\s+\S\s+|)\s*(.*)$', re.U | re.I | re.M)
+        match = matcher.search(sanitizedText)
+        if match:
+          score += 1
+          if metadata is not None:
+            tagline = sanitizeWikiTextMore(match.groups(1)[1])
+            if MATCHER_FIRST_LETTER.search(tagline):
+              tagline = tagline.capitalize() # Only capitalizing if the first one is a letter.
+            Log('::::::::::: tagline: %s...' % tagline[:40])
+            metadata.tagline = tagline
 
         # Original title: text after "| ОригНаз = ".
-        title = searchForMatch(MATCHER_FILM_ORIGINAL_TITLE, 'original_title', filmContent)
+        title = searchForFilmTagMatch(u'\u041E\u0440\u0438\u0433\u041D\u0430\u0437', 'original_title', filmContent)
         if title is not None:
           score += 1
           if metadata is not None:
             metadata.original_title = title
 
-        # Year: NNNN number after "| Год = ".
-        value = searchForMatch(MATCHER_FILM_YEAR, 'year', filmContent)
+        # Year: a number after "| Год = ".
+        value = searchForFilmTagMatch(u'\u0413\u043E\u0434', 'year', filmContent)
         if value is not None:
           score += 1
           year = value
           # Year is set below.
 
         # Duration: a number after "| Время = ".
-        duration = searchForMatch(MATCHER_FILM_DURATION, 'duration', filmContent)
+        duration = searchForFilmTagMatch(u'\u0412\u0440\u0435\u043C\u044F', 'duration', filmContent)
         if duration is not None:
           score += 1
           if metadata is not None:
-            metadata.duration = int(duration) * 1000
+            metadata.duration = parseInt(duration) * 1000
 
         # Studio: a number after "| Компания = ".
-        studios = searchForMatch(MATCHER_FILM_STUDIO, 'studio', filmContent, isMultiLine = True)
+        studios = searchForFilmTagMatch(u'\u041A\u043E\u043C\u043F\u0430\u043D\u0438\u044F', 'studio', filmContent, isMultiLine = True)
         if studios is not None and len(studios) > 0:
           score += 1
           if metadata is not None:
@@ -487,43 +467,43 @@ class PlexMovieAgent(Agent.Movies):
             metadata.studio = matcher.sub(r'\1', studios[0])
 
         # Image: file name after "| Изображение = ".
-        imageName = searchForMatch(MATCHER_FILM_IMAGE, 'image', filmContent, contentDict)
+        imageName = searchForFilmTagMatch(u'\u0418\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435', 'image', filmContent, contentDict)
         if imageName is not None:
           score += 1
 
-        # Genre: "<br />" separated values after "| Жанр = ".
-        genres = searchForMatch(MATCHER_FILM_GENRES, 'genres', filmContent, isMultiLine = True)
+        # Genre: "<br/> or ,"-separated values after "| Жанр = ".
+        genres = searchForFilmTagMatch(u'\u0416\u0430\u043D\u0440', 'genres', filmContent, isMultiLine = True)
         if genres is not None and len(genres) > 0:
           score += 1
           if metadata is not None:
             for genre in genres:
               metadata.genres.add(genre)
 
-        # Directors: "<br />" separated values after "| Режиссёр = ".
-        directors = searchForMatch(MATCHER_FILM_DIRECTORS, 'directors', filmContent, isMultiLine = True)
+        # Directors: "<br/> or ,"-separated values after "| Режиссёр = ".
+        directors = searchForFilmTagMatch(u'\u0420\u0435\u0436\u0438\u0441\u0441\u0451\u0440', 'directors', filmContent, isMultiLine = True)
         if directors is not None and len(directors) > 0:
           score += 1
           if metadata is not None:
             for director in directors:
               metadata.directors.add(director)
 
-        # Writers: "<br />" separated values after "| Сценарист = ".
-        writers = searchForMatch(MATCHER_FILM_WRITERS, 'writers', filmContent, isMultiLine = True)
+        # Writers: "<br/> or ,"-separated values after "| Сценарист = ".
+        writers = searchForFilmTagMatch(u'\u0421\u0446\u0435\u043D\u0430\u0440\u0438\u0441\u0442', 'writers', filmContent, isMultiLine = True)
         if writers is not None and len(writers) > 0:
           score += 1
           if metadata is not None:
             for writer in writers:
               metadata.writers.add(writer)
 
-        # Actors: "<br />" separated values after "| Актёры = ".
-        roles = searchForMatch(MATCHER_FILM_ROLES, 'roles', filmContent, isMultiLine = True)
+        # Actors: "<br/> or ,"-separated values after "| Актёры = ".
+        roles = searchForFilmTagMatch(u'\u0410\u043A\u0442\u0451\u0440\u044B', 'roles', filmContent, isMultiLine = True)
         if roles is not None and len(roles) > 0:
           score += 1
           if metadata is not None:
             parseActorsInfo(roles, metadata, sanitizedText)
 
-        # Country: "<br />" separated values after "| Страна = ".
-        countries = searchForMatch(MATCHER_FILM_COUNTRIES, 'countries', filmContent, isMultiLine = True)
+        # Country: "<br/> or ,"-separated values after "| Страна = ".
+        countries = searchForFilmTagMatch(u'\u0421\u0442\u0440\u0430\u043D\u0430', 'countries', filmContent, isMultiLine = True)
         if countries is not None and len(countries) > 0:
           score += 1
           if metadata is not None:
@@ -531,9 +511,9 @@ class PlexMovieAgent(Agent.Movies):
 
       # If there was no film tag, looking for year else where.
       if year is None:
-        value = searchForMatch(MATCHER_FILM_YEAR, 'year', sanitizedText)
-        if value is not None:
-          year = value
+        match = MATCHER_SOME_YEAR.search(sanitizedText)
+        if match:
+          year = match.groups(1)[0]
       if year is not None:
         contentDict['year'] = year
         if metadata is not None:
@@ -720,14 +700,15 @@ def parseFilmLineItems(line):
   return items
 
 
-def searchForMatch(matcher, key, text, dict=None, isMultiLine=False):
+def searchForFilmTagMatch(name, key, text, dict=None, isMultiLine=False):
   """ Searches for a match given a compiled matcher and text.
       Parsed group 1 is returned if it's not blank; otherwise None is returned.
       If dict is present, the value will be placed there for the provided key.
   """
+  matcher = re.compile(u'^\s*\|\s*' + name + '\s*=(\s*$|.*?\s*$)', re.I | re.M | re.U)
   match = matcher.search(text)
   if match:
-    value = match.groups(1)[0]
+    value = match.groups(1)[0].strip() # Don't ask why we strip() here.
     if not isBlank(value):
       if isMultiLine:
         values = parseFilmLineItems(value)
@@ -741,14 +722,11 @@ def searchForMatch(matcher, key, text, dict=None, isMultiLine=False):
   Log('::::::::::: %s: BLANK' % key)
   return None
 
+
 def sanitizeWikiText(wikiText):
   """ Generic sanitization of wiki text to remove bracket tags
       or links, for example: "[[something]]" or "[[something|somethingelse]]".
   """
-  # Removing a few tags (file tags - "[[Файл...]]").
-  matcher = re.compile(u'\[\[\u0424\u0430\u0439\u043B[^\[\]]+?\]\]', re.M | re.L)
-  wikiText = matcher.sub('', wikiText)
-
   # This takes care of removing links and brackets around, for example,
   # "[[link to something|something]]" would turn into just "something".
   matcher = re.compile('\[\[([^\[\]]+?)\|([^\[\]]+?)\]\]', re.M | re.L)
@@ -757,6 +735,10 @@ def sanitizeWikiText(wikiText):
   # This takes care of removing double brackets (e.g. [[something]]).
   matcher = re.compile('\[\[([^\[\]]+?)\]\]', re.M | re.L | re.U)
   wikiText = matcher.sub(r'\1', wikiText)
+
+  # Removing a few tags (file tags - "[[Файл...]]").
+  matcher = re.compile(u'\[\[\u0424\u0430\u0439\u043B[^\[\]]+?\]\]', re.U)
+  wikiText = matcher.sub('', wikiText)
 
   # Removing acute characters.
   matcher = re.compile(u'\u0301', re.U)
@@ -806,10 +788,13 @@ def parseActorsInfo(roles, metadata, wikiText):
     role.actor = actorName
     # When roles section available, find what role this actor played
     if rolesSection is not None:
+      Log('+++++++++ roles section is detected ++++++++++++++++++++++++')
       matcher = re.compile('^.*' + actorName + '\s+\S\s+(?P<quotes>\W+)(\w.*)(?P=quotes)$', re.U | re.M | re.I)
       match = matcher.search(rolesSection)
       if match:
-        role.role = match.groups(1)[1]
+        roleName = match.groups(1)[1]
+        Log('::::::::::: actor "%s", role="%s"' % (actorName, roleName))
+        role.role = roleName
       else:
         role.role = 'Актер'
     # role.photo = 'http:// todo...'
@@ -822,10 +807,15 @@ def parseWikiCountries(countriesStr, metadata):
         "СССР — Япония"
       List of sanatized country names is returned.
   """
-  # TODO(zhenya): implement this method.
-  #countries = []
   # TODO(zhenya): Implement parsing countries.
-  # match = MATCHER_FILM_COUNTRIES.search(filmContent)
-  # if match:
-  #    countryCodes = parseFilmLineItems(countriesStr)
   pass
+
+
+def parseInt(string):
+  " Gets the first number characters and returns them as an int. "
+  match = MATCHER_FIRST_INTEGER.search(string)
+  if match:
+    return int(match.groups(1)[0])
+  else:
+    return None
+  
