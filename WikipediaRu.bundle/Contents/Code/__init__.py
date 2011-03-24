@@ -26,6 +26,9 @@ MATCHER_FIRST_INTEGER = re.compile('\s*(\d+)\s*\D*', re.U)
 MATCHER_FIRST_LETTER = re.compile('^\w', re.U)
 # Year: some number after " Год ".
 MATCHER_SOME_YEAR = re.compile(u'\b\u0413\u043E\u0434\b.*\D(\d{4})\D.*', re.U | re.I)
+# WIKI category, something like "Категория:Мосфильм"...
+MATCHER_CATEGORY = re.compile(u'^\u041A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u044F:([\s\w]+)\s*$', re.M | re.U)
+MATCHER_PO_ZAKAZU = re.compile(u'(.*?)\s+\u043F\u043E\s+\u0437\u0430\u043A\u0430\u0437\u0443.*', re.U | re.I)
 
 # Filename regexes.
 MATCHER_FILENAME_SPACES = re.compile('(\s\s+|_+)', re.U)
@@ -382,7 +385,6 @@ class PlexMovieAgent(Agent.Movies):
       # Parsing categories.
       if parseCategories and metadata is not None:
         # Looking for something like "Категория:Мосфильм"...
-        MATCHER_CATEGORY = re.compile(u'^\u041A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u044F:([\s\w]+)\s*$', re.M | re.U)
         categories = MATCHER_CATEGORY.findall(sanitizedText)
         for category in categories:
           metadata.collections.add(category)
@@ -461,10 +463,8 @@ class PlexMovieAgent(Agent.Movies):
         if studios is not None and len(studios) > 0:
           score += 1
           if metadata is not None:
-            # Removing annoying "по заказу..." if it's present.
-            matcher = re.compile(u'(.*?)\s*\u043F\u043E\s\u0437\u0430\u043A\u0430\u0437\u0443.*', re.M | re.L)
-            # Only one studio is supported.
-            metadata.studio = matcher.sub(r'\1', studios[0])
+            studio = MATCHER_PO_ZAKAZU.sub(r'\1', studios[0])  # Removing annoying "по заказу..." if it's present.
+            metadata.studio = studio  # Only one studio is supported.
 
         # Image: file name after "| Изображение = ".
         imageName = searchForFilmTagMatch(u'\u0418\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435', 'image', filmContent, contentDict)
