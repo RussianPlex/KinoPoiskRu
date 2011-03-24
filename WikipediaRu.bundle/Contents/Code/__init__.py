@@ -8,6 +8,7 @@ PREF_CACHE_TIME_NAME = 'wikiru_pref_cache_time'
 PREF_MAX_RESULTS_NAME = 'wikiru_pref_wiki_results'
 PREF_CATEGORIES_NAME = 'wikiru_pref_ignore_categories'
 PREF_MIN_PAGE_SCORE = 'wikiru_pref_min_page_score'
+PREF_GET_ALL_ACTORS = 'wikiru_pref_get_all_actors'
 
 ##############  WIKIpedia URLs.
 WIKI_QUERY_URL = 'http://ru.wikipedia.org/w/api.php?action=query&list=search&srprop=timestamp&format=xml&srsearch=%s_(фильм)'
@@ -24,11 +25,13 @@ MATCHER_FILM = re.compile(u'\{\{\u0424\u0438\u043B\u044C\u043C\s*(.*?)\s*^[^|]',
 MATCHER_IMDB_RATING = re.compile('<span\s+class\s*=\s*"rating-rating">\s*(\d+\.\d+)\s*<span', re.M | re.S)
 MATCHER_FIRST_INTEGER = re.compile('\s*(\d+)\s*\D*', re.U)
 MATCHER_FIRST_LETTER = re.compile('^\w', re.U)
+MATCHER_PO_ZAKAZU = re.compile(u'(.*?)\s+\u043F\u043E\s+\u0437\u0430\u043A\u0430\u0437\u0443.*', re.U | re.I)
 # Year: some number after " Год ".
 MATCHER_SOME_YEAR = re.compile(u'\b\u0413\u043E\u0434\b.*\D(\d{4})\D.*', re.U | re.I)
 # WIKI category, something like "Категория:Мосфильм"...
 MATCHER_CATEGORY = re.compile(u'^\u041A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u044F:([\s\w]+)\s*$', re.M | re.U)
-MATCHER_PO_ZAKAZU = re.compile(u'(.*?)\s+\u043F\u043E\s+\u0437\u0430\u043A\u0430\u0437\u0443.*', re.U | re.I)
+# Represents an actor/roles line in the "В Ролях" section.
+MATCHER_ACTOR_LINE = re.compile('^\W*(.*?)\s+[^\s\w\d]\s+(?P<quotes>[^\s\w\d]+)(\w.*?)(?P=quotes).*$', re.U | re.M | re.I)
 
 # Filename regexes.
 MATCHER_FILENAME_SPACES = re.compile('(\s\s+|_+)', re.U)
@@ -54,6 +57,8 @@ SCORE_NOFILMDATA_PENALTY = 15
 SCORE_BADYEAR_PENALTY = 15
 SCORE_NOYEAR_PENALTY = 10
 SCORE_BADTITLE_PENALTY = 20
+
+DEFAULT_ACTOR_ROLE = 'Актер'
 
 # ruslania - good source of images and taglines?
 #      content = HTTP.Request('http://ruskino.ru/mov/search', params).content.strip()
@@ -90,6 +95,7 @@ def Start():
   Log('PREF: WIKI max results is set to %s' % Prefs[PREF_MAX_RESULTS_NAME])
   Log('PREF: Min page score is set to %s' % Prefs[PREF_MIN_PAGE_SCORE])
   Log('PREF: Ignore WIKI categories is set to %s' % str(Prefs[PREF_CATEGORIES_NAME]))
+  Log('PREF: Parse all actors is set to %s' % str(Prefs[PREF_GET_ALL_ACTORS]))
 
 
 class PlexMovieAgent(Agent.Movies):
@@ -161,7 +167,8 @@ class PlexMovieAgent(Agent.Movies):
     wikiImgName = None
     wikiPageUrl = WIKI_IDPAGE_URL % wikiId
     parseCategories = not Prefs[PREF_CATEGORIES_NAME]
-    tmpResult = self.getAndParseItemsWikiPage(wikiPageUrl, metadata, parseCategories = parseCategories)
+    isGetAllActors = Prefs[PREF_GET_ALL_ACTORS]
+    tmpResult = self.getAndParseItemsWikiPage(wikiPageUrl, metadata, parseCategories = parseCategories, isGetAllActors = isGetAllActors)
     if tmpResult is not None:
       wikiContent = tmpResult['all']
       if 'image' in tmpResult:
@@ -320,7 +327,7 @@ class PlexMovieAgent(Agent.Movies):
     return {'year': year, 'title': title}
 
 
-  def getAndParseItemsWikiPage(self, wikiPageUrl, metadata = None, parseCategories = False):
+  def getAndParseItemsWikiPage(self, wikiPageUrl, metadata = None, parseCategories = False, isGetAllActors = False):
     """Given a WIKI page URL, gets it and parses its content.
 
        This method is used to determine score for a given wiki URL,
@@ -500,7 +507,7 @@ class PlexMovieAgent(Agent.Movies):
         if roles is not None and len(roles) > 0:
           score += 1
           if metadata is not None:
-            parseActorsInfo(roles, metadata, sanitizedText)
+            parseActorsInfo(roles, metadata, sanitizedText, isGetAllActors)
 
         # Country: "<br/> or ,"-separated values after "| Страна = ".
         countries = searchForFilmTagMatch(u'\u0421\u0442\u0440\u0430\u043D\u0430', 'countries', filmContent, isMultiLine = True)
@@ -780,24 +787,38 @@ def getWikiSectionContent(sectionTitle, wikiText):
   return None
 
 
-def parseActorsInfo(roles, metadata, wikiText):
+def parseActorsInfo(roles, metadata, wikiText, isGetAllActors):
   # Parsing the roles section (В ролях).
   rolesSection = getWikiSectionContent(u'\u0412 \u0440\u043E\u043B\u044F\u0445', wikiText)
+  if rolesSection is None:
+    return
+  actorsMap = {}
+  for m in MATCHER_ACTOR_LINE.finditer(rolesSection):
+    actorName = m.groups(1)[0]
+    if not isBlank(actorName):
+      roleName = m.groups(1)[2]
+      if isBlank(roleName):
+        roleName = DEFAULT_ACTOR_ROLE
+      actorsMap[actorName] = roleName
+
+  # Stars should go first so they end up on the top of the list.
   for actorName in roles:
     role = metadata.roles.new()
     role.actor = actorName
-    # When roles section available, find what role this actor played
-    if rolesSection is not None:
-      Log('+++++++++ roles section is detected ++++++++++++++++++++++++')
-      matcher = re.compile('^.*' + actorName + '\s+\S\s+(?P<quotes>\W+)(\w.*)(?P=quotes)$', re.U | re.M | re.I)
-      match = matcher.search(rolesSection)
-      if match:
-        roleName = match.groups(1)[1]
-        Log('::::::::::: actor "%s", role="%s"' % (actorName, roleName))
-        role.role = roleName
-      else:
-        role.role = 'Актер'
+    roleName = actorsMap.pop(actorName, None)
+    if roleName is None:
+      roleName = DEFAULT_ACTOR_ROLE
+    role.role = roleName
     # role.photo = 'http:// todo...'
+    Log('::::::::::: actor "%s", role="%s"' % (actorName, roleName))
+  
+  if isGetAllActors:
+    for actorName, roleName in actorsMap.iteritems():
+      role = metadata.roles.new()
+      role.actor = actorName
+      role.role = roleName
+      # role.photo = 'http:// todo...'
+      Log('::::::::::: actor "%s", role="%s"' % (actorName, roleName))
 
 
 def parseWikiCountries(countriesStr, metadata):

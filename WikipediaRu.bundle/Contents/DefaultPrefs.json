@@ -25,5 +25,11 @@
 		"label": "Игнорировать категории",
 		"type": "bool",
 		"default":	"true"
+	},
+  {
+	  "id": "wikiru_pref_get_all_actors",
+		"label": "Брать всех актеров",
+		"type": "bool",
+		"default":	"false"
 	}
 ]
