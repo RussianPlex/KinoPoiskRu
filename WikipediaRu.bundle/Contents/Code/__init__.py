@@ -734,7 +734,7 @@ def sanitizeWikiText(wikiText):
   """ Generic sanitization of wiki text to remove bracket tags
       or links, for example: "[[something]]" or "[[something|somethingelse]]".
   """
-  # This takes care of removing links and brackets around, for example,
+  # This takes care of removing links and brackets; for example,
   # "[[link to something|something]]" would turn into just "something".
   matcher = re.compile('\[\[([^\[\]]+?)\|([^\[\]]+?)\]\]', re.M | re.L)
   wikiText = matcher.sub(r'\2', wikiText)
@@ -746,6 +746,12 @@ def sanitizeWikiText(wikiText):
   # Removing a few tags (file tags - "[[Файл...]]").
   matcher = re.compile(u'\[\[\u0424\u0430\u0439\u043B[^\[\]]+?\]\]', re.U)
   wikiText = matcher.sub('', wikiText)
+
+  # This takes care of removing links and braces; for example,
+  # "{{lang-sv|Arn – Tempelriddaren}}" would turn into just "Arn – Tempelriddaren".
+  matcher = re.compile('\{\{([^\{\}]+?)\|([^\{\}]+?)\}\}', re.M | re.L)
+  wikiText = matcher.sub(r'\2', wikiText)
+
 
   # Removing acute characters.
   matcher = re.compile(u'\u0301', re.U)
@@ -777,10 +783,10 @@ def sanitizeWikiTextMore(wikiText):
 
 def getWikiSectionContent(sectionTitle, wikiText):
   # TODO(zhenya): fix the last section case (when there is no other "==").
-  matcher = re.compile(u'^==\s' + sectionTitle + '\s==\s*$\s*(.+?)\s*^==\s', re.S | re.M | re.I)
+  matcher = re.compile(u'^(?P<quotes>===?)\s' + sectionTitle + '\s(?P=quotes)\s*$\s*(.+?)\s*^==', re.S | re.M | re.I)
   match = matcher.search(wikiText)
   if match:
-    content = sanitizeWikiTextMore(match.groups(1)[0])
+    content = sanitizeWikiTextMore(match.groups(1)[1])
     if not isBlank(content):
       Log('::::::::::: section "%s": %s...' % (sectionTitle, content[:40]))
       return content
