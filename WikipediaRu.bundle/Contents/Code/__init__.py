@@ -431,18 +431,20 @@ class PlexMovieAgent(Agent.Movies):
           if metadata is not None:
             metadata.title = title
 
-        # Fetching the tag line - something after triple-quoted title.
-        # Example: '''Камень желаний''' (tagline content... 
-        matcher = re.compile('^\'\'\'\W?\s*' + title + '\s*\W?\'\'\'(\s+\S\s+|)\s*(.*)$', re.U | re.I | re.M)
+        # Tagline: something after triple-quoted title.
+        # Example: '''Камень желаний''' (tagline content...
+        matcher = re.compile('^\s*\'\'\'\s*' + title + '\s*\'\'\'(\s+\S\s+|)\s*(.+)$', re.U | re.I | re.M)
         match = matcher.search(sanitizedText)
         if match:
           score += 1
           if metadata is not None:
-            tagline = sanitizeWikiTextMore(match.groups(1)[1])
-            if MATCHER_FIRST_LETTER.search(tagline):
-              tagline = tagline.capitalize() # Only capitalizing if the first one is a letter.
-            Log('::::::::::: tagline: %s...' % tagline[:40])
-            metadata.tagline = tagline
+            tagline = match.groups(1)[1]
+            if not str(tagline).isdigit(): # Bizzar bug when no match is found.
+              tagline = sanitizeWikiTextMore(tagline)
+              if MATCHER_FIRST_LETTER.search(tagline):
+                tagline = tagline.capitalize() # Only capitalizing if the first one is a letter.
+              Log('::::::::::: tagline: %s...' % tagline[:40])
+              metadata.tagline = tagline
 
         # Original title: text after "| ОригНаз = ".
         title = searchForFilmTagMatch(u'\u041E\u0440\u0438\u0433\u041D\u0430\u0437', 'original_title', filmContent)
@@ -712,10 +714,10 @@ def searchForFilmTagMatch(name, key, text, dict=None, isMultiLine=False):
       Parsed group 1 is returned if it's not blank; otherwise None is returned.
       If dict is present, the value will be placed there for the provided key.
   """
-  matcher = re.compile(u'^\s*\|\s*' + name + '\s*=(\s*$|.*?\s*$)', re.I | re.M | re.U)
+  matcher = re.compile(u'^\s*\|\s*' + name + '\s*=\s*(.*?\||\s*$|.*?\s*$)', re.I | re.M | re.U)
   match = matcher.search(text)
   if match:
-    value = match.groups(1)[0].strip() # Don't ask why we strip() here.
+    value = match.groups(1)[0].strip(r'\|\s')
     if not isBlank(value):
       if isMultiLine:
         values = parseFilmLineItems(value)
@@ -807,6 +809,8 @@ def parseActorsInfo(roles, metadata, wikiText, isGetAllActors):
         roleName = DEFAULT_ACTOR_ROLE
       actorsMap[actorName] = roleName
 
+  Log('-----------------------------------------')
+  Log('\n' + rolesSection)
   # Stars should go first so they end up on the top of the list.
   for actorName in roles:
     role = metadata.roles.new()
@@ -817,9 +821,12 @@ def parseActorsInfo(roles, metadata, wikiText, isGetAllActors):
     role.role = roleName
     # role.photo = 'http:// todo...'
     Log('::::::::::: actor "%s", role="%s"' % (actorName, roleName))
-  
+
+  Log('------------------ 0 ')
   if isGetAllActors:
+    Log('------------------ 1 ')
     for actorName, roleName in actorsMap.iteritems():
+      Log('------------------ 2 ')
       role = metadata.roles.new()
       role.actor = actorName
       role.role = roleName
