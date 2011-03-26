@@ -726,7 +726,7 @@ def sanitizeWikiTextMore(wikiText):
 
 def getWikiSectionContent(sectionTitle, wikiText):
   # TODO(zhenya): fix the last section case (when there is no other "==").
-  matcher = re.compile(u'^(?P<quotes>===?)\s' + sectionTitle + '\s(?P=quotes)\s*$\s*(.+?)\s*^==', re.S | re.M | re.I)
+  matcher = re.compile(u'^(?P<quotes>===?)\s' + sectionTitle + '\s(?P=quotes)\s*$\s*(.+?)\s*^==[^=]', re.S | re.M | re.I)
   match = matcher.search(wikiText)
   if match:
     content = sanitizeWikiTextMore(match.groups(1)[1])
