@@ -20,7 +20,7 @@ IMDB_TITLEPAGE_URL = 'http://www.imdb.com/title/tt%s'
 
 ############## Compiled regexes
 # The {{Фильм }} tag.
-MATCHER_FILM = re.compile(u'\{\{\u0424\u0438\u043B\u044C\u043C\s*(.*?)\s*^[^|]', re.S | re.M)
+MATCHER_FILM = re.compile(u'\{\{\s*\u0424\u0438\u043B\u044C\u043C\s*(([^\{\}]*?\{\{[^\{\}]*?\}\}[^\{\}]*?)*|.*?)\s*\}\}', re.S | re.M)
 # IMDB rating, something like this "<span class="rating-rating">5.0<span>".
 MATCHER_IMDB_RATING = re.compile('<span\s+class\s*=\s*"rating-rating">\s*(\d+\.\d+)\s*<span', re.M | re.S)
 MATCHER_FIRST_INTEGER = re.compile('\s*(\d+)\s*\D*', re.U)
@@ -31,7 +31,7 @@ MATCHER_SOME_YEAR = re.compile(u'\b\u0413\u043E\u0434\b.*\D(\d{4})\D.*', re.U | 
 # WIKI category, something like "Категория:Мосфильм"...
 MATCHER_CATEGORY = re.compile(u'^\u041A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u044F:([\s\w]+)\s*$', re.M | re.U)
 # Represents an actor/roles line in the "В Ролях" section.
-MATCHER_ACTOR_LINE = re.compile('^\W*(.*?)\s+[^\s\w\d]\s+(?P<quotes>[^\s\w\d]+)(\w.*?)(?P=quotes).*$', re.U | re.M | re.I)
+MATCHER_ACTOR_LINE = re.compile('^\W*(.*?)(\s*\|\|\s*(.*)\s*\|\s*|\s+[^\s\w\d]\s+(?P<quotes>[^\s\w\d]+)(\w.*?)(?P=quotes).*)$', re.U | re.M | re.I)
 
 # Filename regexes.
 MATCHER_FILENAME_SPACES = re.compile('(\s\s+|_+)', re.U)
@@ -433,7 +433,7 @@ class PlexMovieAgent(Agent.Movies):
 
         # Tagline: something after triple-quoted title.
         # Example: '''Камень желаний''' (tagline content...
-        matcher = re.compile('^\s*\'\'\'\s*' + title + '\s*\'\'\'(\s+\S\s+|)\s*(.+)$', re.U | re.I | re.M)
+        matcher = re.compile('^\s*\'\'\'\s*\W?\s*' + title + '\s*\W?\s*\'\'\'(\s+\S\s+|)\s*(.+)$', re.U | re.I | re.M)
         match = matcher.search(sanitizedText)
         if match:
           score += 1
@@ -705,7 +705,9 @@ def parseFilmLineItems(line):
     line = line.replace(',', '') # When <br/> tags are there, commas are just removed.
     line = matcher.sub(',', line)
   for item in line.split(','):
-    items.append(string.capwords(item.strip()))
+    item = item.strip()
+    if len(item) > 0: 
+      items.append(string.capwords(item))
   return items
 
 
@@ -714,19 +716,19 @@ def searchForFilmTagMatch(name, key, text, dict=None, isMultiLine=False):
       Parsed group 1 is returned if it's not blank; otherwise None is returned.
       If dict is present, the value will be placed there for the provided key.
   """
-  matcher = re.compile(u'^\s*\|\s*' + name + '\s*=\s*(.*?\||\s*$|.*?\s*$)', re.I | re.M | re.U)
+  matcher = re.compile(u'^\s*\|\s*' + name + '\s*=\s*(.*?\||\s*$|.*?\s*$)', re.I | re.M | re.U | re.S)
   match = matcher.search(text)
   if match:
-    value = match.groups(1)[0].strip(r'\|\s')
+    value = match.groups(1)[0].strip('|\t\n\r\f\v')
     if not isBlank(value):
       if isMultiLine:
         values = parseFilmLineItems(value)
         Log('::::::::::: %s: [%s]' % (key, ', '.join(values)))
         return values
       else:
-        Log('::::::::::: %s: %s' % (key, value[:40]))
+        Log('::::::::::: %s: "%s"' % (key, value[:40]))
         if dict is not None:
-          dict[key] = value
+          dict[key] = value.strip()
         return value
   Log('::::::::::: %s: BLANK' % key)
   return None
@@ -809,8 +811,6 @@ def parseActorsInfo(roles, metadata, wikiText, isGetAllActors):
         roleName = DEFAULT_ACTOR_ROLE
       actorsMap[actorName] = roleName
 
-  Log('-----------------------------------------')
-  Log('\n' + rolesSection)
   # Stars should go first so they end up on the top of the list.
   for actorName in roles:
     role = metadata.roles.new()
@@ -822,11 +822,8 @@ def parseActorsInfo(roles, metadata, wikiText, isGetAllActors):
     # role.photo = 'http:// todo...'
     Log('::::::::::: actor "%s", role="%s"' % (actorName, roleName))
 
-  Log('------------------ 0 ')
   if isGetAllActors:
-    Log('------------------ 1 ')
     for actorName, roleName in actorsMap.iteritems():
-      Log('------------------ 2 ')
       role = metadata.roles.new()
       role.actor = actorName
       role.role = roleName
