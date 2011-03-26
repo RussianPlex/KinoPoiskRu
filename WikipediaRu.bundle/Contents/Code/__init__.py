@@ -1,4 +1,4 @@
-import datetime, string, os, re, time, unicodedata, hashlib, urlparse, types
+import datetime, string, re, time, unicodedata, hashlib, urlparse, types
 
 AGENT_VERSION = '0.1'
 USER_AGENT = 'Plex WikipediaRu Metadata Agent (+http://www.plexapp.com/) v.%s' % AGENT_VERSION
@@ -33,18 +33,6 @@ MATCHER_CATEGORY = re.compile(u'^\u041A\u0430\u0442\u0435\u0433\u043E\u0440\u043
 # Represents an actor/roles line in the "В Ролях" section.
 MATCHER_ACTOR_LINE = re.compile('^\s*\W*\s*(\w+\s+\w+(\s+\w+)?)(\s*?|.*?)$', re.U | re.M)
 MATCHER_ACTOR_ROLE = re.compile('^\W*(\w.*?\w)\W*$', re.U | re.I)
-
-# Filename regexes.
-MATCHER_FILENAME_SPACES = re.compile('(\s\s+|_+)', re.U)
-MATCHER_FILENAME_EXTENSION = re.compile('\.\w+$', re.U)
-# Filename's item info: the CD, film, серия, часть, etc. at the end (e.g. "- CD1").
-MATCHER_FILENAME_CDINFO = re.compile('\s*-\s*(\w*\s*\d{0,3}|\d{0,3}\w*\s*)$', re.U)
-# Filename's year: the parenthesized version.
-MATCHER_FILENAME_YEAR_PARENS = re.compile('\s*\(\s*(\d{4})\s*\)\s*', re.U)
-# Filename's year: year's on the left.
-MATCHER_FILENAME_YEAR_LEFT = re.compile('^\s*(\d{4})\s*-?\s*', re.U)
-# Filename's year: year's on the right.
-MATCHER_FILENAME_YEAR_RIGHT = re.compile('\s*-?\s*(\d{4})\s*$', re.U)
 
 ############## MoviePosterDB constants.
 MPDB_ROOT = 'http://movieposterdb.plexapp.com'
@@ -108,32 +96,24 @@ class PlexMovieAgent(Agent.Movies):
   ############################# S E A R C H ####################################
   ##############################################################################
   def search(self, results, media, lang, manual=False):
-    """Parses the filename and searches for matches on Russian wikipedia.
-       Some information is retrieved from IMDB.
-
-       Found matches saved in the results list as MetadataSearchResult objects.
-       For each results, we determine match's wiki page id, title, year,
-       and the score (how good we think the match is on the scale of 1 - 100).
+    """ Searches for matches on Russian wikipedia using the title and year
+        passed via the media object. All matches are saved in a list of results
+        as MetadataSearchResult objects. For each results, we determine a
+        wiki page id, title, year, and the score (how good we think the match
+        is on the scale of 1 - 100).
     """
-
-    # Parse title and year from the filename.
-    part = media.items[0].parts[0]
-    filepath = part.file.decode('utf-8')
-    filename = os.path.basename(filepath)
-    Log('WikipediaRu.search: filename="%s"' % filename)
-
-    info = self.parseTitleAndYearFromFilename(filename)
-    if info['title'] is None:
-      info['title'] = media.name
+    year = None
+    if media.year:
+      year = safeEncode(media.year)
 
     # Looking for wiki pages for this title.
-    self.findWikiPageMatches(info, results, lang)
+    self.findWikiPageMatches(media.name, year, results, lang)
 
     results.Sort('score', descending=True)
 
-    Log('SEARCH got %d results:' % len(results))
+    Log('Search produced %d results:' % len(results))
     for result in results:
-      Log('  ... result: id=%s, name=%s, year=%s, score=%d' % (result.id, result.name, str(result.year), result.score))
+      Log('  ... result: id="%s", name="%s", year="%s", score="%d".' % (result.id, result.name, str(result.year), result.score))
 
 
   ##############################################################################
@@ -285,47 +265,6 @@ class PlexMovieAgent(Agent.Movies):
     else:
       string = "%s_%s" % (self.makeIdentifier(title).lower(), year)
     return self.stringToId("%s" % string)
-
-
-  def parseTitleAndYearFromFilename(self, filename):
-    """Parses media item's title and year from the filename.
-
-       If this operation fails, title is set to filename and
-       year to empty. Returns an object with properties 'year' and 'title'
-       (both might have None values).
-    """
-    Log('Parsing filename: "%s"' % filename)
-    year = None
-    title = None
-
-    # Removing file extension, stacking data (CD1, etc.),
-    # extra spaces, and underscores.
-    name = MATCHER_FILENAME_EXTENSION.sub('', filename)
-    name = MATCHER_FILENAME_SPACES.sub(' ', name)
-    name = MATCHER_FILENAME_CDINFO.sub('', name)
-
-    # Parsing and removing the parenthesized year if it's present.
-    # Note the order - it matters.
-    match = MATCHER_FILENAME_YEAR_PARENS.search(name)
-    if match:
-      year = match.groups(1)[0]
-      name = MATCHER_FILENAME_YEAR_PARENS.sub(' ', name)
-    if year is None:
-      match = MATCHER_FILENAME_YEAR_LEFT.search(name)
-      if match:
-        year = match.groups(1)[0]
-        name = MATCHER_FILENAME_YEAR_LEFT.sub('', name)
-      else:
-        match = MATCHER_FILENAME_YEAR_RIGHT.search(name)
-        if match:
-          year = match.groups(1)[0]
-          name = MATCHER_FILENAME_YEAR_RIGHT.sub('', name)
-
-    if not isBlank(name):
-      title = name.strip()
-
-    Log('Parsed from filename: title="%s", year="%s"' % (str(title), str(year)))
-    return {'year': year, 'title': title}
 
 
   def getAndParseItemsWikiPage(self, wikiPageUrl, metadata = None, parseCategories = False, isGetAllActors = False):
@@ -537,7 +476,7 @@ class PlexMovieAgent(Agent.Movies):
     return contentDict
 
 
-  def findWikiPageMatches(self, filenameInfo, results, lang):
+  def findWikiPageMatches(self, mediaName, mediaYear, results, lang):
     """ Using Wikipedia query API, tries to determine most probable pages
         for the media item we are looking for. The matches are added to the
         passed results list as MetadataSearchResult objects.
@@ -546,15 +485,13 @@ class PlexMovieAgent(Agent.Movies):
         determine page id, title year, and get the score.
     """
     try:
+      Log('Searching for titles with name="%s" and year="%s"' % (str(mediaName), str(mediaYear)))
       prefMaxResults = int(Prefs[PREF_MAX_RESULTS_NAME])
       minPageScore = int(Prefs[PREF_MIN_PAGE_SCORE])
       pageMatches = []
-      # TODO(zhenya): use year in the query.
-      yearFromFilename = filenameInfo['year']
-      titleFromFilename = filenameInfo['title']
-      queryStr = titleFromFilename
-      if yearFromFilename is not None:
-        queryStr += '_' + yearFromFilename
+      queryStr = mediaName
+      if mediaYear is not None:
+        queryStr += '_' + mediaYear
       xmlResult = getXmlFromWikiApiPage(WIKI_QUERY_URL % queryStr)
       pathMatch = xmlResult.xpath('//api/query/searchinfo')
       if len(pathMatch) == 0:
@@ -581,9 +518,9 @@ class PlexMovieAgent(Agent.Movies):
           if 'year' in matchesMap:
             titleYear = int(matchesMap['year'])
         if isBlank(pageId):
-          pageId = self.titleAndYearToId(pageTitle, yearFromFilename)
+          pageId = self.titleAndYearToId(pageTitle, mediaYear)
 
-        score = scoreMovieMatch(matchOrder, filenameInfo, pageTitle, matchesMap)
+        score = scoreMovieMatch(mediaName, mediaYear, matchOrder, pageTitle, matchesMap)
         if score > minPageScore:  # Ignoring very low scored matches.
           results.Append(MetadataSearchResult(id = pageId,
                                               name = pageTitle,
@@ -619,10 +556,8 @@ class PlexMovieAgent(Agent.Movies):
     return imdbData
 
 
-def scoreMovieMatch(matchOrder, filenameInfo, pageTitle, matchesMap):
+def scoreMovieMatch(mediaName, mediaYear, matchOrder, pageTitle, matchesMap):
   score = 50 # Starting score.
-  yearFromFilename = filenameInfo['year']
-  titleFromFilename = filenameInfo['title']
 
   # Score is diminishes as we move down the list.
   orderPenalty = matchOrder * SCORE_ORDER_PENALTY
@@ -639,10 +574,10 @@ def scoreMovieMatch(matchOrder, filenameInfo, pageTitle, matchesMap):
   # Wiki year matching year from filename is a good sign.
   if 'year' in matchesMap:
     yearFromWiki = matchesMap['year']
-    if yearFromFilename is not None:
-      if yearFromWiki == yearFromFilename:
+    if mediaYear is not None:
+      if yearFromWiki == mediaYear:
         score += 20
-      elif abs(int(yearFromWiki) - int(yearFromFilename)) < 3:
+      elif abs(int(yearFromWiki) - int(mediaYear)) < 3:
         score += 5 # Might be a mistake.
       else:
         score = score - SCORE_BADYEAR_PENALTY # If years don't match - penalize the score.
@@ -650,7 +585,7 @@ def scoreMovieMatch(matchOrder, filenameInfo, pageTitle, matchesMap):
     score = score - SCORE_NOYEAR_PENALTY
 
   # Checking the title from filename with title in the match.
-  score += compareTitles(titleFromFilename, pageTitle)
+  score += compareTitles(mediaName, pageTitle)
 
   if score > 100:
     score = 100
