@@ -20,7 +20,7 @@ IMDB_TITLEPAGE_URL = 'http://www.imdb.com/title/tt%s'
 
 ############## Compiled regexes
 # The {{Фильм }} tag.
-MATCHER_FILM = re.compile(u'\{\{\s*\u0424\u0438\u043B\u044C\u043C\s*(([^\{\}]*?\{\{[^\{\}]*?\}\}[^\{\}]*?)*|.*?)\s*\}\}', re.S | re.M)
+MATCHER_FILM = re.compile(u'\{\{\s*\u0424\u0438\u043B\u044C\u043C\s*(([^\{\}]*?\{\{[^\{\}]*?\}\}[^\{\}]*?)*|.*?)\s*\}\}', re.S | re.M | re.U | re.I)
 # IMDB rating, something like this "<span class="rating-rating">5.0<span>".
 MATCHER_IMDB_RATING = re.compile('<span\s+class\s*=\s*"rating-rating">\s*(\d+\.\d+)\s*<span', re.M | re.S)
 MATCHER_FIRST_INTEGER = re.compile('\s*(\d+)\D*', re.U)
@@ -31,7 +31,8 @@ MATCHER_SOME_YEAR = re.compile(u'\b\u0413\u043E\u0434\b.*\D(\d{4})\D.*', re.U | 
 # WIKI category, something like "Категория:Мосфильм"...
 MATCHER_CATEGORY = re.compile(u'^\u041A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u044F:([\s\w]+)\s*$', re.M | re.U)
 # Represents an actor/roles line in the "В Ролях" section.
-MATCHER_ACTOR_LINE = re.compile('^\W*(.*?)(\s*\|\|\s*(.*)\s*\|\s*|\s+[^\s\w\d]\s+(?P<quotes>[^\s\w\d]+)(\w.*?)(?P=quotes).*)$', re.U | re.M | re.I)
+MATCHER_ACTOR_LINE = re.compile('^\s*\W*\s*(\w+\s+\w+(\s+\w+)?)(\s*?|.*?)$', re.U | re.M)
+MATCHER_ACTOR_ROLE = re.compile('^\W*(\w.*?\w)\W*$', re.U | re.I)
 
 # Filename regexes.
 MATCHER_FILENAME_SPACES = re.compile('(\s\s+|_+)', re.U)
@@ -58,7 +59,7 @@ SCORE_BADYEAR_PENALTY = 15
 SCORE_NOYEAR_PENALTY = 10
 SCORE_BADTITLE_PENALTY = 20
 
-DEFAULT_ACTOR_ROLE = 'Актер'
+DEFAULT_ACTOR_ROLE = 'актер'
 
 # ruslania - good source of images and taglines?
 #      content = HTTP.Request('http://ruskino.ru/mov/search', params).content.strip()
@@ -203,7 +204,7 @@ class PlexMovieAgent(Agent.Movies):
       # Fetching movie posters using moviePosterDB code.
       sortOrder = 0
       if imdbId is not None:
-        imdb_code = imdbId.replace('tt','').lstrip('t0')
+        imdb_code = imdbId.replace('tt', '').lstrip('t0')
         sortOrder = self.moviePosterDBupdate(metadata, posters_valid_names, imdb_code)
 
       # Fetching an image from the wikipedia.
@@ -396,7 +397,7 @@ class PlexMovieAgent(Agent.Movies):
         for category in categories:
           metadata.collections.add(category)
 
-      # Parsing the summary (Сюжет).
+      # Summary: section Сюжет.
       summary = getWikiSectionContent(u'\u0421\u044E\u0436\u0435\u0442', sanitizedText)
       if summary is not None:
         score += 2
@@ -414,7 +415,6 @@ class PlexMovieAgent(Agent.Movies):
       year = None
       if match:
         filmContent = match.groups(1)[0]
-        filmContent = filmContent.rstrip('}}') # We might still have a trailing '}}'.
 #        Log('    filmContent: \n' + filmContent)
         contentDict['film'] = filmContent
         score += 2
@@ -433,13 +433,13 @@ class PlexMovieAgent(Agent.Movies):
 
         # Tagline: something after triple-quoted title.
         # Example: '''Камень желаний''' (tagline content...
-        matcher = re.compile('^\s*\'\'\'\s*\W?\s*' + title + '\s*\W?\s*\'\'\'(\s+\S\s+|)\s*(.+)$', re.U | re.I | re.M)
+        matcher = re.compile('^\s*\'\'\'\s*\W?\s*' + title + '\s*\W?\s*\'\'\'(\s+[^\s\(]\s+|)\s*(.+)$', re.U | re.I | re.M)
         match = matcher.search(sanitizedText)
         if match:
           score += 1
           if metadata is not None:
             tagline = match.groups(1)[1]
-            if not str(tagline).isdigit(): # Bizzar bug when no match is found.
+            if not str(tagline).isdigit(): # Bizarre issue when no match is found.
               tagline = sanitizeWikiTextMore(tagline)
               if MATCHER_FIRST_LETTER.search(tagline):
                 tagline = tagline.capitalize() # Only capitalizing if the first one is a letter.
@@ -705,8 +705,8 @@ def parseFilmLineItems(line):
     line = line.replace(',', '') # When <br/> tags are there, commas are just removed.
     line = matcher.sub(',', line)
   for item in line.split(','):
-    item = item.strip()
-    if len(item) > 0: 
+    item = item.strip(' \t\n\r\f\v"«»')
+    if len(item) > 0:
       items.append(string.capwords(item))
   return items
 
@@ -753,8 +753,9 @@ def sanitizeWikiText(wikiText):
 
   # This takes care of removing links and braces; for example,
   # "{{lang-sv|Arn – Tempelriddaren}}" would turn into just "Arn – Tempelriddaren".
-  matcher = re.compile('\{\{([^\{\}]+?)\|([^\{\}]+?)\}\}', re.M | re.L)
-  wikiText = matcher.sub(r'\2', wikiText)
+  # Note: negative lookahead is because we'd like to skip the Фильм tag.
+  matcher = re.compile(u'\{\{\s*((?!\u0424\u0438\u043B\u044C\u043C)[^\{\}]*?)\|([^\{\}]+?)\s*\}\}', re.M | re.L | re.I)
+  wikiText = matcher.sub(r' \2 ', wikiText)
 
   # Removing a few hardcoded decoration tags.
   matcher = re.compile('\s*<small>\s*(.*?)\s*</small>\s*', re.M | re.S | re.U)
@@ -806,32 +807,39 @@ def parseActorsInfo(roles, metadata, wikiText, isGetAllActors):
   if rolesSection is None:
     return
   actorsMap = {}
-  for m in MATCHER_ACTOR_LINE.finditer(rolesSection):
-    actorName = m.groups(1)[0]
-    if not isBlank(actorName):
-      roleName = m.groups(1)[2]
-      if isBlank(roleName):
-        roleName = DEFAULT_ACTOR_ROLE
-      actorsMap[actorName] = roleName
+  try:
+    for m in MATCHER_ACTOR_LINE.finditer(rolesSection):
+      actorName = m.groups(1)[0].strip()
+      if not isBlank(actorName):
+        roleName = MATCHER_ACTOR_ROLE.sub(r'\1', m.groups(1)[2])
+        roleName = roleName.replace('|', ' ') # Weird case.
+        if isBlank(roleName):
+          roleName = DEFAULT_ACTOR_ROLE
+        actorsMap[actorName] = roleName
+  except:
+    Log('ERROR: unable to parse actors!')
 
-  # Stars should go first so they end up on the top of the list.
-  for actorName in roles:
-    role = metadata.roles.new()
-    role.actor = actorName
-    roleName = actorsMap.pop(actorName, None)
-    if roleName is None:
-      roleName = DEFAULT_ACTOR_ROLE
-    role.role = roleName
-    # role.photo = 'http:// todo...'
-    Log('::::::::::: actor "%s", role="%s"' % (actorName, roleName))
-
-  if isGetAllActors:
-    for actorName, roleName in actorsMap.iteritems():
+  try:
+    # Stars should go first so they end up on the top of the list.
+    for actorName in roles:
       role = metadata.roles.new()
       role.actor = actorName
+      roleName = actorsMap.pop(actorName, None)
+      if roleName is None:
+        roleName = DEFAULT_ACTOR_ROLE
       role.role = roleName
       # role.photo = 'http:// todo...'
       Log('::::::::::: actor "%s", role="%s"' % (actorName, roleName))
+
+    if isGetAllActors:
+      for actorName, roleName in actorsMap.iteritems():
+        role = metadata.roles.new()
+        role.actor = actorName
+        role.role = roleName
+        # role.photo = 'http:// todo...'
+        Log('::::::::::: actor "%s", role="%s"' % (actorName, roleName))
+  except:
+    Log('ERROR: unable to add actors!')
 
 
 def parseWikiCountries(countriesStr, metadata):
