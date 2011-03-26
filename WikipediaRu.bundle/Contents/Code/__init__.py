@@ -23,7 +23,7 @@ IMDB_TITLEPAGE_URL = 'http://www.imdb.com/title/tt%s'
 MATCHER_FILM = re.compile(u'\{\{\s*\u0424\u0438\u043B\u044C\u043C\s*(([^\{\}]*?\{\{[^\{\}]*?\}\}[^\{\}]*?)*|.*?)\s*\}\}', re.S | re.M)
 # IMDB rating, something like this "<span class="rating-rating">5.0<span>".
 MATCHER_IMDB_RATING = re.compile('<span\s+class\s*=\s*"rating-rating">\s*(\d+\.\d+)\s*<span', re.M | re.S)
-MATCHER_FIRST_INTEGER = re.compile('\s*(\d+)\s*\D*', re.U)
+MATCHER_FIRST_INTEGER = re.compile('\s*(\d+)\D*', re.U)
 MATCHER_FIRST_LETTER = re.compile('^\w', re.U)
 MATCHER_PO_ZAKAZU = re.compile(u'(.*?)\s+\u043F\u043E\s+\u0437\u0430\u043A\u0430\u0437\u0443.*', re.U | re.I)
 # Year: some number after " Год ".
@@ -457,7 +457,7 @@ class PlexMovieAgent(Agent.Movies):
         value = searchForFilmTagMatch(u'\u0413\u043E\u0434', 'year', filmContent)
         if value is not None:
           score += 1
-          year = value
+          year = str(parseInt(value))
           # Year is set below.
 
         # Duration: a number after "| Время = ".
@@ -620,7 +620,7 @@ class PlexMovieAgent(Agent.Movies):
 
 
 def scoreMovieMatch(matchOrder, filenameInfo, pageTitle, matchesMap):
-  score = 60 # Starting score.
+  score = 50 # Starting score.
   yearFromFilename = filenameInfo['year']
   titleFromFilename = filenameInfo['title']
 
@@ -756,6 +756,9 @@ def sanitizeWikiText(wikiText):
   matcher = re.compile('\{\{([^\{\}]+?)\|([^\{\}]+?)\}\}', re.M | re.L)
   wikiText = matcher.sub(r'\2', wikiText)
 
+  # Removing a few hardcoded decoration tags.
+  matcher = re.compile('\s*<small>\s*(.*?)\s*</small>\s*', re.M | re.S | re.U)
+  wikiText = matcher.sub(r' \1 ', wikiText)
 
   # Removing acute characters.
   matcher = re.compile(u'\u0301', re.U)
