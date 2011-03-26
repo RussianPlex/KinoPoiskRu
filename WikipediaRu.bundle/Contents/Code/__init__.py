@@ -40,6 +40,7 @@ MPDB_JSON = MPDB_ROOT + '/1/request.json?imdb_id=%s&api_key=p13x2&secret=%s&widt
 MPDB_SECRET = 'e3c77873abc4866d9e28277a9114c60c'
 
 ############## Constants that influence matching score on titles.
+SCORE_FIRST_ITEM_BONUS = 5
 SCORE_ORDER_PENALTY = 3
 SCORE_WIKIMATCH_IMPORTANCE = 2
 SCORE_NOFILMDATA_PENALTY = 15
@@ -558,10 +559,11 @@ class PlexMovieAgent(Agent.Movies):
 
 def scoreMovieMatch(mediaName, mediaYear, matchOrder, pageTitle, matchesMap):
   score = 50 # Starting score.
-
-  # Score is diminishes as we move down the list.
-  orderPenalty = matchOrder * SCORE_ORDER_PENALTY
-  score = score - orderPenalty
+  if matchOrder == 0:
+    score += SCORE_FIRST_ITEM_BONUS
+  else:  
+    # Score is diminishes as we move down the list.
+    score = score - (matchOrder * SCORE_ORDER_PENALTY)
 
   # Adding matches from the wikipage (2 points for each find).
   if 'score' in matchesMap:
