@@ -19,8 +19,8 @@ WIKI_QUERYFILE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=imagei
 IMDB_TITLEPAGE_URL = 'http://www.imdb.com/title/tt%s'
 
 ############## Compiled regexes
-# The {{Фильм }} tag.
-MATCHER_FILM = re.compile(u'\{\{\s*\u0424\u0438\u043B\u044C\u043C\s*(([^\{\}]*?\{\{[^\{\}]*?\}\}[^\{\}]*?)*|.*?)\s*\}\}', re.S | re.M | re.U | re.I)
+# The {{Фильм }} tag (we consider Телесериал as well).
+MATCHER_FILM = re.compile(u'\{\{\s*(\u0424\u0438\u043B\u044C\u043C|\u0422\u0435\u043B\u0435\u0441\u0435\u0440\u0438\u0430\u043B)\s*(([^\{\}]*?\{\{[^\{\}]*?\}\}[^\{\}]*?)*|.*?)\s*\}\}', re.S | re.M | re.U | re.I)
 # IMDB rating, something like this "<span class="rating-rating">5.0<span>".
 MATCHER_IMDB_RATING = re.compile('<span\s+class\s*=\s*"rating-rating">\s*(\d+\.\d+)\s*<span', re.M | re.S)
 MATCHER_FIRST_INTEGER = re.compile('\s*(\d+)\D*', re.U)
@@ -353,9 +353,11 @@ class PlexMovieAgent(Agent.Movies):
       # Looking for the {{Фильм}} tag.
       match = MATCHER_FILM.search(sanitizedText)
       year = None
+      Log('----------------------------------- 0')
       if match:
-        filmContent = match.groups(1)[0]
-#        Log('    filmContent: \n' + filmContent)
+        Log('----------------------------------- 1')
+        filmContent = match.groups(1)[1]
+        Log('    filmContent: \n' + filmContent)
         contentDict['film'] = filmContent
         score += 2
 
