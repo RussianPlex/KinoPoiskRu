@@ -91,6 +91,7 @@ def Start():
 class PlexMovieAgent(Agent.Movies):
   name = 'WikipediaRu'
   languages = [Locale.Language.Russian]
+  accepts_from = ['com.plexapp.agents.localmedia']
 
 
   ##############################################################################
@@ -225,6 +226,10 @@ class PlexMovieAgent(Agent.Movies):
         Fetches and sets movie posters on the metadata object
         given imdb id (w/o the 'tt' prefix).
     """
+    # TODO(zhenya): now we can't pass imdb id since there is only one id variable
+    # - metadata.id - and we use it to represent a WIKI id. When support for an
+    # alternative id is added, we could pass it and the next agent (e.g. themoviedb)
+    # could use it.
     secret = Hash.MD5( ''.join([MPDB_SECRET, imdb_code]))[10:22]
     queryJSON = JSON.ObjectFromURL(MPDB_JSON % (imdb_code, secret), cacheTime=10)
 
@@ -353,11 +358,9 @@ class PlexMovieAgent(Agent.Movies):
       # Looking for the {{Фильм}} tag.
       match = MATCHER_FILM.search(sanitizedText)
       year = None
-      Log('----------------------------------- 0')
       if match:
-        Log('----------------------------------- 1')
         filmContent = match.groups(1)[1]
-        Log('    filmContent: \n' + filmContent)
+#        Log('    filmContent: \n' + filmContent)
         contentDict['film'] = filmContent
         score += 2
 
