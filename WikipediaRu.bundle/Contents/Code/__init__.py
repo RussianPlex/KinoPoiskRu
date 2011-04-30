@@ -46,7 +46,6 @@ SCORE_WIKIMATCH_IMPORTANCE = 2
 SCORE_NOFILMDATA_PENALTY = 15
 SCORE_BADYEAR_PENALTY = 15
 SCORE_NOYEAR_PENALTY = 10
-SCORE_BADTITLE_PENALTY = 20
 
 DEFAULT_ACTOR_ROLE = 'актер'
 
@@ -563,7 +562,15 @@ class PlexMovieAgent(Agent.Movies):
 
 
 def scoreMovieMatch(mediaName, mediaYear, matchOrder, pageTitle, matchesMap):
-  score = 50 # Starting score.
+  # Checking the title from filename with title in the match.
+  # If no words from title are found in the media name, this is not our match. 
+  titleScore = compareTitles(mediaName, pageTitle)
+  Log('AAAAAAAAAAAAAAAAAAAAAAAA %s' % str(titleScore))
+  if titleScore == 0:
+    score = 0
+  else:
+    score = 50 + titleScore
+
   if matchOrder == 0:
     score += SCORE_FIRST_ITEM_BONUS
   else:  
@@ -591,9 +598,6 @@ def scoreMovieMatch(mediaName, mediaYear, matchOrder, pageTitle, matchesMap):
   else:
     score = score - SCORE_NOYEAR_PENALTY
 
-  # Checking the title from filename with title in the match.
-  score += compareTitles(mediaName, pageTitle)
-
   if score > 100:
     score = 100
   elif score < 0:
@@ -605,16 +609,13 @@ def scoreMovieMatch(mediaName, mediaYear, matchOrder, pageTitle, matchesMap):
 def compareTitles(titleFrom, titleTo):
   """ Takes words from titleFrom string and checks
       if the titleTo contains these words. For each
-      match, score is increased by 2. If no matches are
-      found SCORE_BADTITLE_PENALTY (-20) is returned.
+      match, score is increased by 2.
   """
   score = 0
   title = titleTo.lower()
   for word in titleFrom.lower().split():
     if title.find(word) >= 0:
       score += 2
-  if score == 0:
-    score = score - SCORE_BADTITLE_PENALTY
   return score
 
 
