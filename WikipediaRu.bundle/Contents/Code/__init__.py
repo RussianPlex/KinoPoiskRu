@@ -565,7 +565,6 @@ def scoreMovieMatch(mediaName, mediaYear, matchOrder, pageTitle, matchesMap):
   # Checking the title from filename with title in the match.
   # If no words from title are found in the media name, this is not our match. 
   titleScore = compareTitles(mediaName, pageTitle)
-  Log('AAAAAAAAAAAAAAAAAAAAAAAA %s' % str(titleScore))
   if titleScore == 0:
     score = 0
   else:
