@@ -59,7 +59,6 @@ DEFAULT_ACTOR_ROLE = 'актер'
 # Kina-Teatr.ru URLs.
 #KTRU_QUERY_URL = 'http://www.kino-teatr.ru/search/'
 
-# TODO(zhenya): clean up extraneous log statements.
 
 def Start():
   Log('START::::::::: %s' % USER_AGENT)
@@ -112,9 +111,9 @@ class PlexMovieAgent(Agent.Movies):
 
     results.Sort('score', descending=True)
 
-    Log('Search produced %d results:' % len(results))
-    for result in results:
-      Log('  ... result: id="%s", name="%s", year="%s", score="%d".' % (result.id, result.name, str(result.year), result.score))
+#    Log('Search produced %d results:' % len(results))
+#    for result in results:
+#      Log('  ... result: id="%s", name="%s", year="%s", score="%d".' % (result.id, result.name, str(result.year), result.score))
 
 
   ##############################################################################
@@ -129,7 +128,7 @@ class PlexMovieAgent(Agent.Movies):
     part = media.items[0].parts[0]
     filename = part.file.decode('utf-8')
     plexHash = part.plexHash
-    Log('WikipediaRu.update: filename="%s", plexHash="%s", guid="%s"' % (filename, plexHash, metadata.guid))
+#    Log('WikipediaRu.update: filename="%s", plexHash="%s", guid="%s"' % (filename, plexHash, metadata.guid))
 
     matcher = re.compile(r'//(\d+)\?')
     match = matcher.search(metadata.guid)
@@ -243,7 +242,7 @@ class PlexMovieAgent(Agent.Movies):
           metadata.posters[full_image_url] = Proxy.Preview(HTTP.Request(thumbUrl), sort_order = i)
           posters_valid_names.append(full_image_url)
           i += 1
-          Log('Setting a poster from MPDB: "%s"' % imageUrl)
+#          Log('Setting a poster from MPDB: "%s"' % imageUrl)
     return i
 
 
@@ -387,7 +386,7 @@ class PlexMovieAgent(Agent.Movies):
               tagline = sanitizeWikiTextMore(tagline)
               if MATCHER_FIRST_LETTER.search(tagline):
                 tagline = tagline.capitalize() # Only capitalizing if the first one is a letter.
-              Log('::::::::::: tagline: %s...' % tagline[:40])
+#              Log('::::::::::: tagline: %s...' % tagline[:40])
               metadata.tagline = tagline
 
         # Original title: text after "| ОригНаз = ".
@@ -476,7 +475,7 @@ class PlexMovieAgent(Agent.Movies):
     except:
       Log('ERROR: unable to parse wiki page!')
 
-    Log(':::::::::::::::::::: score ' + str(score) + ' for URL:\n    ' + wikiPageUrl)
+#    Log(':::::::::::::::::::: score ' + str(score) + ' for URL:\n    ' + wikiPageUrl)
     contentDict['score'] = score
     return contentDict
 
@@ -552,10 +551,10 @@ class PlexMovieAgent(Agent.Movies):
         match = MATCHER_IMDB_RATING.search(content)
         if match:
           rating = match.groups(1)[0]
-          Log('Parsed IMDB rating: "%s"' % rating)
+#          Log('Parsed IMDB rating: "%s"' % rating)
           imdbData['rating'] = rating
         else:
-          Log('IMDB rating is NOT found!')
+          Log('WARN: IMDB rating is NOT found!')
     except:
       Log('ERROR: unable to fetch or parse IMDB data.')
     return imdbData
@@ -665,14 +664,14 @@ def searchForFilmTagMatch(name, key, text, dict=None, isMultiLine=False):
     if not isBlank(value):
       if isMultiLine:
         values = parseFilmLineItems(value)
-        Log('::::::::::: %s: [%s]' % (key, ', '.join(values)))
+#        Log('::::::::::: %s: [%s]' % (key, ', '.join(values)))
         return values
       else:
-        Log('::::::::::: %s: "%s"' % (key, value[:40]))
+#        Log('::::::::::: %s: "%s"' % (key, value[:40]))
         if dict is not None:
           dict[key] = value.strip()
         return value
-  Log('::::::::::: %s: BLANK' % key)
+#  Log('::::::::::: %s: BLANK' % key)
   return None
 
 
@@ -738,7 +737,7 @@ def getWikiSectionContent(sectionTitle, wikiText):
   if match:
     content = sanitizeWikiTextMore(match.groups(1)[1])
     if not isBlank(content):
-      Log('::::::::::: section "%s": %s...' % (sectionTitle, content[:40]))
+#      Log('::::::::::: section "%s": %s...' % (sectionTitle, content[:40]))
       return content
   return None
 
@@ -771,7 +770,7 @@ def parseActorsInfo(roles, metadata, wikiText, isGetAllActors):
         roleName = DEFAULT_ACTOR_ROLE
       role.role = roleName
       # role.photo = 'http:// todo...'
-      Log('::::::::::: actor "%s", role="%s"' % (actorName, roleName))
+#      Log('::::::::::: actor "%s", role="%s"' % (actorName, roleName))
 
     if isGetAllActors:
       for actorName, roleName in actorsMap.iteritems():
