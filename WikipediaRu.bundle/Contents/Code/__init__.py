@@ -1,7 +1,11 @@
+# coding=utf-8
+
 import datetime, string, re, time, unicodedata, hashlib, urlparse, types
 
 AGENT_VERSION = '0.1'
 USER_AGENT = 'Plex WikipediaRu Metadata Agent (+http://www.plexapp.com/) v.%s' % AGENT_VERSION
+
+WIKIRU_IS_DEBUG = False
 
 ##############  Preference item names.
 PREF_CACHE_TIME_NAME = 'wikiru_pref_cache_time'
@@ -22,7 +26,7 @@ IMDB_TITLEPAGE_URL = 'http://www.imdb.com/title/tt%s'
 # The {{Фильм }} tag (we consider Телесериал as well).
 MATCHER_FILM = re.compile(u'\{\{\s*(\u0424\u0438\u043B\u044C\u043C|\u0422\u0435\u043B\u0435\u0441\u0435\u0440\u0438\u0430\u043B)\s*(([^\{\}]*?\{\{[^\{\}]*?\}\}[^\{\}]*?)*|.*?)\s*\}\}', re.S | re.M | re.U | re.I)
 # IMDB rating, something like this "<span class="rating-rating">5.0<span>".
-MATCHER_IMDB_RATING = re.compile('<span\s+class\s*=\s*"rating-rating">\s*(\d+\.\d+)\s*<span', re.M | re.S)
+MATCHER_IMDB_RATING = re.compile('<div\s+class\s*=\s*"star-box-giga-star">\s*(\d+\.\d+)\s*</div>', re.M | re.S)
 MATCHER_FIRST_INTEGER = re.compile('\s*(\d+)\D*', re.U)
 MATCHER_FIRST_LETTER = re.compile('^\w', re.U)
 MATCHER_PO_ZAKAZU = re.compile(u'(.*?)\s+\u043F\u043E\s+\u0437\u0430\u043A\u0430\u0437\u0443.*', re.U | re.I)
@@ -56,12 +60,12 @@ DEFAULT_ACTOR_ROLE = 'актер'
 # [might want to look into language/country stuff at some point]
 # param info here: http://code.google.com/apis/ajaxsearch/documentation/reference.html
 #
-# Kina-Teatr.ru URLs.
+# Kino-Teatr.ru URLs.
 #KTRU_QUERY_URL = 'http://www.kino-teatr.ru/search/'
 
 
 def Start():
-  Log('START::::::::: %s' % USER_AGENT)
+  sendToLog('***** START ***** %s' % USER_AGENT)
   # Setting cache experation time.
   prefCache = Prefs[PREF_CACHE_TIME_NAME]
   if prefCache == "1 минута":
@@ -79,11 +83,11 @@ def Start():
   else:
     cacheExp = CACHE_1WEEK
   HTTP.CacheTime = cacheExp
-  Log('PREF: Setting cache expiration to %d seconds (%s)' % (cacheExp, prefCache))
-  Log('PREF: WIKI max results is set to %s' % Prefs[PREF_MAX_RESULTS_NAME])
-  Log('PREF: Min page score is set to %s' % Prefs[PREF_MIN_PAGE_SCORE])
-  Log('PREF: Ignore WIKI categories is set to %s' % str(Prefs[PREF_CATEGORIES_NAME]))
-  Log('PREF: Parse all actors is set to %s' % str(Prefs[PREF_GET_ALL_ACTORS]))
+  sendToLog('PREF: Setting cache expiration to %d seconds (%s)' % (cacheExp, prefCache))
+  sendToLog('PREF: WIKI max results is set to %s' % Prefs[PREF_MAX_RESULTS_NAME])
+  sendToLog('PREF: Min page score is set to %s' % Prefs[PREF_MIN_PAGE_SCORE])
+  sendToLog('PREF: Ignore WIKI categories is set to %s' % str(Prefs[PREF_CATEGORIES_NAME]))
+  sendToLog('PREF: Parse all actors is set to %s' % str(Prefs[PREF_GET_ALL_ACTORS]))
 
 
 class PlexMovieAgent(Agent.Movies):
@@ -111,9 +115,9 @@ class PlexMovieAgent(Agent.Movies):
 
     results.Sort('score', descending=True)
 
-#    Log('Search produced %d results:' % len(results))
-#    for result in results:
-#      Log('  ... result: id="%s", name="%s", year="%s", score="%d".' % (result.id, result.name, str(result.year), result.score))
+    sendToDebugLog('Search produced %d results:' % len(results))
+    for result in results:
+      sendToDebugLog('  ... result: id="%s", name="%s", year="%s", score="%d".' % (result.id, result.name, str(result.year), result.score))
 
 
   ##############################################################################
@@ -127,8 +131,7 @@ class PlexMovieAgent(Agent.Movies):
     """
     part = media.items[0].parts[0]
     filename = part.file.decode('utf-8')
-    plexHash = part.plexHash
-#    Log('WikipediaRu.update: filename="%s", plexHash="%s", guid="%s"' % (filename, plexHash, metadata.guid))
+    sendToDebugLog('WikipediaRu.update: filename="%s", guid="%s"' % (filename, metadata.guid))
 
     matcher = re.compile(r'//(\d+)\?')
     match = matcher.search(metadata.guid)
@@ -192,28 +195,29 @@ class PlexMovieAgent(Agent.Movies):
         wikiImgQueryUrl = WIKI_QUERYFILE_URL % wikiImgName
         xmlResult = getXmlFromWikiApiPage(wikiImgQueryUrl)
         pathMatch = xmlResult.xpath('//api/query/pages/page')
-        if len(pathMatch) == 0:
-          Log('ERROR: unable to parse page "%s".' % wikiImgQueryUrl)
+        if not len(pathMatch):
+          sendToLog('ERROR: unable to parse page "%s".' % wikiImgQueryUrl)
           raise Exception
 
         missing = pathMatch[0].get('missing')
         if missing is not None:
-          Log('ERROR: file "%s" does not seem to exist.' % wikiImgName)
+          sendToLog('ERROR: file "%s" does not seem to exist.' % wikiImgName)
           raise Exception
 
         pathMatch = pathMatch[0].xpath('//imageinfo/ii')
-        if len(pathMatch) == 0:
-          Log('ERROR: image section is not found in a WIKI response.')
+        if not len(pathMatch):
+          sendToLog('ERROR: image section is not found in a WIKI response.')
           raise Exception
 
         thumbUrl = pathMatch[0].get('url')
         if thumbUrl is not None:
           url = thumbUrl
-          metadata.posters[url] = Proxy.Preview(HTTP.Request(thumbUrl), sort_order = sortOrder)
+          response = sendHttpRequest(thumbUrl)
+          metadata.posters[url] = Proxy.Preview(response, sort_order = sortOrder)
           posters_valid_names.append(url)
-          Log('Setting a poster from wikipedia: "%s"' % url)
+          sendToLog('Setting a poster from wikipedia: "%s"' % url)
     except:
-      Log('ERROR: unable to fetch art work.')
+      sendToLog('ERROR: unable to fetch art work.')
 
     metadata.posters.validate_keys(posters_valid_names)
     metadata.art.validate_keys(art_valid_names)
@@ -239,10 +243,10 @@ class PlexMovieAgent(Agent.Movies):
         full_image_url = imageUrl + '?api_key=p13x2&secret=' + secret
 
         if poster['language'] == 'RU' or poster['language'] == 'US':
-          metadata.posters[full_image_url] = Proxy.Preview(HTTP.Request(thumbUrl), sort_order = i)
+          metadata.posters[full_image_url] = Proxy.Preview(sendHttpRequest(thumbUrl), sort_order = i)
           posters_valid_names.append(full_image_url)
           i += 1
-#          Log('Setting a poster from MPDB: "%s"' % imageUrl)
+          sendToDebugLog('Setting a poster from MPDB: "%s"' % imageUrl)
     return i
 
 
@@ -313,19 +317,19 @@ class PlexMovieAgent(Agent.Movies):
 
       xmlResult = getXmlFromWikiApiPage(wikiPageUrl)
       pathMatch = xmlResult.xpath('//api/query/pages/page')
-      if len(pathMatch) == 0:
-        Log('ERROR: unable to parse page "%s".' % wikiPageUrl)
+      if not len(pathMatch):
+        sendToLog('ERROR: unable to parse page "%s".' % wikiPageUrl)
         return None
 
       missing = pathMatch[0].get('missing')
       if missing is not None:
-        Log('ERROR: page "%s" does not seem to exist.' % wikiPageUrl)
+        sendToLog('ERROR: page "%s" does not seem to exist.' % wikiPageUrl)
         return None
 
       contentDict['id'] = pathMatch[0].get('pageid')
       pathMatch = pathMatch[0].xpath('//revisions/rev')
-      if len(pathMatch) == 0:
-        Log('ERROR: page revision is not found in a WIKI response.')
+      if not len(pathMatch):
+        sendToLog('ERROR: page revision is not found in a WIKI response.')
         return None
 
       # This is the content of the entire page for our title.
@@ -358,7 +362,7 @@ class PlexMovieAgent(Agent.Movies):
       year = None
       if match:
         filmContent = match.groups(1)[1]
-#        Log('    filmContent: \n' + filmContent)
+        sendToDebugLog('    filmContent: \n' + filmContent)
         contentDict['film'] = filmContent
         score += 2
 
@@ -373,21 +377,20 @@ class PlexMovieAgent(Agent.Movies):
           score += 1
           if metadata is not None:
             metadata.title = title
-
-        # Tagline: something after triple-quoted title.
-        # Example: '''Камень желаний''' (tagline content...
-        matcher = re.compile('^\s*\'\'\'\s*\W?\s*' + title + '\s*\W?\s*\'\'\'(\s+[^\s\(]\s+|)\s*(.+)$', re.U | re.I | re.M)
-        match = matcher.search(sanitizedText)
-        if match:
-          score += 1
-          if metadata is not None:
-            tagline = match.groups(1)[1]
-            if not str(tagline).isdigit(): # Bizarre issue when no match is found.
-              tagline = sanitizeWikiTextMore(tagline)
-              if MATCHER_FIRST_LETTER.search(tagline):
-                tagline = tagline.capitalize() # Only capitalizing if the first one is a letter.
-#              Log('::::::::::: tagline: %s...' % tagline[:40])
-              metadata.tagline = tagline
+          # Tagline: something after triple-quoted title.
+          # Example: '''Камень желаний''' (tagline content...
+          matcher = re.compile('^\s*\'\'\'\s*\W?\s*' + title + '\s*\W?\s*\'\'\'(\s+[^\s\(]\s+|)\s*(.+)$', re.U | re.I | re.M)
+          match = matcher.search(sanitizedText)
+          if match:
+            score += 1
+            if metadata is not None:
+              tagline = match.groups(1)[1]
+              if not str(tagline).isdigit(): # Bizarre issue when no match is found.
+                tagline = sanitizeWikiTextMore(tagline)
+                if MATCHER_FIRST_LETTER.search(tagline):
+                  tagline = tagline.capitalize() # Only capitalizing if the first one is a letter.
+                sendToDebugLog('::::::::::: tagline: %s...' % tagline[:40])
+                metadata.tagline = tagline
 
         # Original title: text after "| ОригНаз = ".
         title = searchForFilmTagMatch(u'\u041E\u0440\u0438\u0433\u041D\u0430\u0437', 'original_title', filmContent)
@@ -473,9 +476,9 @@ class PlexMovieAgent(Agent.Movies):
           metadata.originally_available_at = Datetime.ParseDate('%s-01-01' % year).date()
 
     except:
-      Log('ERROR: unable to parse wiki page!')
+      sendToLog('ERROR: unable to parse wiki page!')
 
-#    Log(':::::::::::::::::::: score ' + str(score) + ' for URL:\n    ' + wikiPageUrl)
+    sendToDebugLog(':::::::::::::::::::: score ' + str(score) + ' for URL:\n    ' + wikiPageUrl)
     contentDict['score'] = score
     return contentDict
 
@@ -489,7 +492,7 @@ class PlexMovieAgent(Agent.Movies):
         determine page id, title year, and get the score.
     """
     try:
-      Log('Searching for titles with name="%s" and year="%s"' % (str(mediaName), str(mediaYear)))
+      sendToLog('Searching for titles with name="%s" and year="%s"' % (str(mediaName), str(mediaYear)))
       prefMaxResults = int(Prefs[PREF_MAX_RESULTS_NAME])
       minPageScore = int(Prefs[PREF_MIN_PAGE_SCORE])
       pageMatches = []
@@ -498,13 +501,13 @@ class PlexMovieAgent(Agent.Movies):
         queryStr += '_' + mediaYear
       xmlResult = getXmlFromWikiApiPage(WIKI_QUERY_URL % queryStr)
       pathMatch = xmlResult.xpath('//api/query/searchinfo')
-      if len(pathMatch) == 0:
-        Log('ERROR: searchinfo is not found in a WIKI response.')
+      if not len(pathMatch):
+        sendToLog('ERROR: searchinfo is not found in a WIKI response.')
         raise Exception
       else:
         if pathMatch[0].get('totalhits') == '0':
           # TODO - implement case
-          Log('INFO: No hits found! Getting a suggestion... NOT SUPPORTED YET!')
+          sendToLog('INFO: No hits found! Getting a suggestion... NOT SUPPORTED YET!')
           raise Exception
         else:
           pageMatches = xmlResult.xpath('//api/query/search/p')
@@ -535,28 +538,27 @@ class PlexMovieAgent(Agent.Movies):
         if matchOrder == prefMaxResults:
           break # Got enough matches, stop.
     except:
-      Log('ERROR: Unable to produce WIKI matches!')
+      sendToLog('ERROR: Unable to produce WIKI matches!')
 
 
   def getDataFromImdb(self, imdbId):
     """ Fetches and parses a title page from IMDB given title id.
-        Parsed data is retuned in a dictionary with the following keys:
+        Parsed data is returned in a dictionary with the following keys:
           'rating'.
         All values are strings or lists of strings.
     """
     imdbData = {}
     try:
-      content = HTTP.Request(IMDB_TITLEPAGE_URL % imdbId).content
+      content = sendHttpRequest(IMDB_TITLEPAGE_URL % imdbId).content
       if content:
         match = MATCHER_IMDB_RATING.search(content)
+        rating = None
         if match:
           rating = match.groups(1)[0]
-#          Log('Parsed IMDB rating: "%s"' % rating)
           imdbData['rating'] = rating
-        else:
-          Log('WARN: IMDB rating is NOT found!')
+        sendToDebugLog('  ... IMDB rating: "%s"' % str(rating))
     except:
-      Log('ERROR: unable to fetch or parse IMDB data.')
+      sendToLog('ERROR: unable to fetch or parse IMDB data.')
     return imdbData
 
 
@@ -564,12 +566,12 @@ def scoreMovieMatch(mediaName, mediaYear, matchOrder, pageTitle, matchesMap):
   # Checking the title from filename with title in the match.
   # If no words from title are found in the media name, this is not our match. 
   titleScore = compareTitles(mediaName, pageTitle)
-  if titleScore == 0:
+  if not titleScore:
     score = 0
   else:
     score = 50 + titleScore
 
-  if matchOrder == 0:
+  if not matchOrder:
     score += SCORE_FIRST_ITEM_BONUS
   else:  
     # Score is diminishes as we move down the list.
@@ -578,7 +580,7 @@ def scoreMovieMatch(mediaName, mediaYear, matchOrder, pageTitle, matchesMap):
   # Adding matches from the wikipage (2 points for each find).
   if 'score' in matchesMap:
     wikiScore = int(matchesMap['score'])
-    if wikiScore == 0:
+    if not wikiScore:
       score = score - SCORE_NOFILMDATA_PENALTY
     else:
       score += int(wikiScore * SCORE_WIKIMATCH_IMPORTANCE)
@@ -619,7 +621,7 @@ def compareTitles(titleFrom, titleTo):
 
 def getXmlFromWikiApiPage(wikiPageUrl):
   wikiPageUrl = wikiPageUrl.replace(' ', '%20')  # TODO(zhenya): encode the whole URL?
-  requestHeaders = { 'User-Agent': USER_AGENT }
+  requestHeaders = { 'User-Agent': USER_AGENT, 'Accept': 'text/html'}
   return XML.ElementFromURL(wikiPageUrl, headers=requestHeaders)
 
 
@@ -664,14 +666,14 @@ def searchForFilmTagMatch(name, key, text, dict=None, isMultiLine=False):
     if not isBlank(value):
       if isMultiLine:
         values = parseFilmLineItems(value)
-#        Log('::::::::::: %s: [%s]' % (key, ', '.join(values)))
+        sendToDebugLog('  ... %s: [%s]' % (key, ', '.join(values)))
         return values
       else:
-#        Log('::::::::::: %s: "%s"' % (key, value[:40]))
+        sendToDebugLog('  ... %s: "%s"' % (key, value[:40]))
         if dict is not None:
           dict[key] = value.strip()
         return value
-#  Log('::::::::::: %s: BLANK' % key)
+  sendToDebugLog('  ... %s: BLANK' % key)
   return None
 
 
@@ -737,7 +739,7 @@ def getWikiSectionContent(sectionTitle, wikiText):
   if match:
     content = sanitizeWikiTextMore(match.groups(1)[1])
     if not isBlank(content):
-#      Log('::::::::::: section "%s": %s...' % (sectionTitle, content[:40]))
+#      sendToDebugLog('####### section "%s": %s...' % (sectionTitle, content[:40]))
       return content
   return None
 
@@ -758,7 +760,7 @@ def parseActorsInfo(roles, metadata, wikiText, isGetAllActors):
           roleName = DEFAULT_ACTOR_ROLE
         actorsMap[actorName] = roleName
   except:
-    Log('ERROR: unable to parse actors!')
+    sendToLog('ERROR: unable to parse actors!')
 
   try:
     # Stars should go first so they end up on the top of the list.
@@ -770,7 +772,7 @@ def parseActorsInfo(roles, metadata, wikiText, isGetAllActors):
         roleName = DEFAULT_ACTOR_ROLE
       role.role = roleName
       # role.photo = 'http:// todo...'
-#      Log('::::::::::: actor "%s", role="%s"' % (actorName, roleName))
+      sendToDebugLog('  ... actor "%s", role="%s"' % (actorName, roleName))
 
     if isGetAllActors:
       for actorName, roleName in actorsMap.iteritems():
@@ -778,9 +780,9 @@ def parseActorsInfo(roles, metadata, wikiText, isGetAllActors):
         role.actor = actorName
         role.role = roleName
         # role.photo = 'http:// todo...'
-        Log('::::::::::: actor "%s", role="%s"' % (actorName, roleName))
+        sendToDebugLog('  ... actor "%s", role="%s"' % (actorName, roleName))
   except:
-    Log('ERROR: unable to add actors!')
+    sendToLog('ERROR: unable to add actors!')
 
 
 def parseWikiCountries(countriesStr, metadata):
@@ -795,10 +797,24 @@ def parseWikiCountries(countriesStr, metadata):
 
 
 def parseInt(string):
-  " Gets the first number characters and returns them as an int. "
+  """ Gets the first number characters and returns them as an int. """
   match = MATCHER_FIRST_INTEGER.search(string)
   if match:
     return int(match.groups(1)[0])
   else:
     return None
-  
+
+def sendHttpRequest(url):
+  # Note that these headers are not strictly necessary.
+  headers = {'User-agent': USER_AGENT, 'Accept': 'text/html'}
+  return HTTP.Request(url, headers = headers)
+
+def sendToLog(msg):
+  if WIKIRU_IS_DEBUG:
+    print msg
+  else:
+    Log(msg)
+
+def sendToDebugLog(msg):
+  if WIKIRU_IS_DEBUG:
+    print 'wikiru::: ' + msg
