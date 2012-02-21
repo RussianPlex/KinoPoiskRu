@@ -5,7 +5,11 @@ import datetime, string, re, time, unicodedata, hashlib, urlparse, types
 AGENT_VERSION = '0.1'
 USER_AGENT = 'Plex WikipediaRu Metadata Agent (+http://www.plexapp.com/) v.%s' % AGENT_VERSION
 
-WIKIRU_IS_DEBUG = False
+WIKIRU_IS_DEBUG = True
+WIKIRU_IS_SEARCH_DEBUG = True
+WIKIRU_IS_UPDATE_DEBUG = False
+isRunningSearch = False
+
 
 ##############  Preference item names.
 PREF_CACHE_TIME_NAME = 'wikiru_pref_cache_time'
@@ -22,9 +26,21 @@ WIKI_QUERYFILE_URL = 'http://ru.wikipedia.org/w/api.php?action=query&prop=imagei
 
 IMDB_TITLEPAGE_URL = 'http://www.imdb.com/title/tt%s'
 
-############## Compiled regexes
-# The {{Фильм }} tag (we consider Телесериал as well).
-MATCHER_FILM = re.compile(u'\{\{\s*(\u0424\u0438\u043B\u044C\u043C|\u0422\u0435\u043B\u0435\u0441\u0435\u0440\u0438\u0430\u043B)\s*(([^\{\}]*?\{\{[^\{\}]*?\}\}[^\{\}]*?)*|.*?)\s*\}\}', re.S | re.M | re.U | re.I)
+############## Unicode russian strings.
+RU_Izobrazhenie = u'\u0418\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435' # Изображение
+RU_File = u'\u0424\u0430\u0439\u043B' # Файл
+RU_film = u'\u0444\u0438\u043B\u044C\u043C' # фильм
+RU_Film = u'\u0424\u0438\u043B\u044C\u043C' # Фильм
+RU_multfilm = u'\u043C\u0443\u043B\u044C\u0442\u0444\u0438\u043B\u044C\u043C' # мультфильм
+RU_Multfilm = u'\u041C\u0443\u043B\u044C\u0442\u0444\u0438\u043B\u044C\u043C' # Мультфильм
+RU_Teleserial = u'\u0422\u0435\u043B\u0435\u0441\u0435\u0440\u0438\u0430\u043B' # Телесериал
+WIKI_FILM_TAGNAME = RU_Film + '|' + RU_Multfilm + '|' + RU_Teleserial
+WIKI_TITLE_ANNOTATION = RU_film + '|' + RU_multfilm
+
+
+############## Compiled regexes.
+# WIKI film tag: {{Фильм }} or {{Мультфильм }} or {{Телесериал }}.
+MATCHER_FILM = re.compile('\{\{\s*(' + WIKI_FILM_TAGNAME + ')\\b\s*(([^\{\}]*?\{\{[^\{\}]*?\}\}[^\{\}]*?)*|.*?)\s*\}\}', re.S | re.M | re.U | re.I)
 # IMDB rating, something like this "<span class="rating-rating">5.0<span>".
 MATCHER_IMDB_RATING = re.compile('<div\s+class\s*=\s*"star-box-giga-star">\s*(\d+\.\d+)\s*</div>', re.M | re.S)
 MATCHER_FIRST_INTEGER = re.compile('\s*(\d+)\D*', re.U)
@@ -37,6 +53,8 @@ MATCHER_CATEGORY = re.compile(u'^\u041A\u0430\u0442\u0435\u0433\u043E\u0440\u043
 # Represents an actor/roles line in the "В Ролях" section.
 MATCHER_ACTOR_LINE = re.compile('^\s*\W*\s*(\w+\s+\w+(\s+\w+)?)(\s*?|.*?)$', re.U | re.M)
 MATCHER_ACTOR_ROLE = re.compile('^\W*(\w.*?\w)\W*$', re.U | re.I)
+# Wiki's (фильм) or (мультфильм) title annotation.
+MATCHER_FILM_TITLE_ANNOTATION = re.compile('\s*\((' + WIKI_TITLE_ANNOTATION + ')\)\s*$', re.U | re.I)
 
 ############## MoviePosterDB constants.
 MPDB_ROOT = 'http://movieposterdb.plexapp.com'
@@ -106,18 +124,25 @@ class PlexMovieAgent(Agent.Movies):
         wiki page id, title, year, and the score (how good we think the match
         is on the scale of 1 - 100).
     """
+    isRunningSearch = True
+    sendToSearchDebugLog('SEARCH START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
     year = None
     if media.year:
       year = safeEncode(media.year)
+    sendToSearchDebugLog('searching for name="%s", year="%s", guid="%s", hash="%s"...' %
+        (str(media.name), str(year), str(media.guid), str(media.hash)))
 
     # Looking for wiki pages for this title.
     self.findWikiPageMatches(media.name, year, results, lang)
-
     results.Sort('score', descending=True)
-
-    sendToDebugLog('Search produced %d results:' % len(results))
-    for result in results:
-      sendToDebugLog('  ... result: id="%s", name="%s", year="%s", score="%d".' % (result.id, result.name, str(result.year), result.score))
+    if WIKIRU_IS_SEARCH_DEBUG:
+      sendToSearchDebugLog('search produced %d results:' % len(results))
+      index = 0
+      for result in results:
+        sendToSearchDebugLog(' ... result %d: id="%s", name="%s", year="%s", score="%d".' % (index, result.id, result.name, str(result.year), result.score))
+        index += 1
+    sendToSearchDebugLog('SEARCH END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
+    isRunningSearch = False
 
 
   ##############################################################################
@@ -129,6 +154,7 @@ class PlexMovieAgent(Agent.Movies):
        it to fetch the page, which is going to be used to populate the
        media item record. Another field that could be used is metadata.title.
     """
+    isRunningSearch = False
     part = media.items[0].parts[0]
     filename = part.file.decode('utf-8')
     sendToDebugLog('WikipediaRu.update: filename="%s", guid="%s"' % (filename, metadata.guid))
@@ -279,7 +305,7 @@ class PlexMovieAgent(Agent.Movies):
     """Given a WIKI page URL, gets it and parses its content.
 
        This method is used to determine score for a given wiki URL,
-       and also to write the fetched and parsed data into the
+       and also to write the fetched and parsed data into a
        passed metadata object if it's present.
 
        Returns None if there was an error or a dictionary with the
@@ -333,6 +359,7 @@ class PlexMovieAgent(Agent.Movies):
         return None
 
       # This is the content of the entire page for our title.
+      sendToSearchDebugLog('WIKI page is fetched, parsing it...')
       wikiText = safeEncode(pathMatch[0].text)
       sanitizedText = sanitizeWikiText(wikiText)
       contentDict['all'] = sanitizedText
@@ -341,6 +368,7 @@ class PlexMovieAgent(Agent.Movies):
       if parseCategories and metadata is not None:
         # Looking for something like "Категория:Мосфильм"...
         categories = MATCHER_CATEGORY.findall(sanitizedText)
+        sendToSearchDebugLog(' + WIKI page contains %d <categories>' % len(categories))
         for category in categories:
           metadata.collections.add(category)
 
@@ -358,11 +386,10 @@ class PlexMovieAgent(Agent.Movies):
           metadata.summary = metadata.summary + '\n\nИнтересные факты:\n' + facts
 
       # Looking for the {{Фильм}} tag.
-      match = MATCHER_FILM.search(sanitizedText)
+      match = MATCHER_FILM.search(wikiText)
       year = None
       if match:
-        filmContent = match.groups(1)[1]
-        sendToDebugLog('    filmContent: \n' + filmContent)
+        filmContent = sanitizeWikiFilmTagText(match.groups(1)[1])
         contentDict['film'] = filmContent
         score += 2
 
@@ -373,6 +400,9 @@ class PlexMovieAgent(Agent.Movies):
 
         # Title: text after "| РусНаз = ".
         title = searchForFilmTagMatch(u'\u0420\u0443\u0441\u041D\u0430\u0437', 'title', filmContent)
+        if title is None:
+          # Try a different name - "Название"
+          title = searchForFilmTagMatch(u'\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435', 'title', filmContent)
         if title is not None:
           score += 1
           if metadata is not None:
@@ -393,11 +423,11 @@ class PlexMovieAgent(Agent.Movies):
                 metadata.tagline = tagline
 
         # Original title: text after "| ОригНаз = ".
-        title = searchForFilmTagMatch(u'\u041E\u0440\u0438\u0433\u041D\u0430\u0437', 'original_title', filmContent)
-        if title is not None:
+        origTitle = searchForFilmTagMatch(u'\u041E\u0440\u0438\u0433\u041D\u0430\u0437', 'original_title', filmContent)
+        if origTitle is not None:
           score += 1
           if metadata is not None:
-            metadata.original_title = title
+            metadata.original_title = origTitle
 
         # Year: a number after "| Год = ".
         value = searchForFilmTagMatch(u'\u0413\u043E\u0434', 'year', filmContent)
@@ -422,7 +452,7 @@ class PlexMovieAgent(Agent.Movies):
             metadata.studio = studio  # Only one studio is supported.
 
         # Image: file name after "| Изображение = ".
-        imageName = searchForFilmTagMatch(u'\u0418\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435', 'image', filmContent, contentDict)
+        imageName = searchForFilmTagMatch(RU_Izobrazhenie, 'image', filmContent, contentDict)
         if imageName is not None:
           score += 1
 
@@ -463,6 +493,8 @@ class PlexMovieAgent(Agent.Movies):
           score += 1
           if metadata is not None:
             parseWikiCountries(countries, metadata)
+      else:
+        sendToSearchDebugLog(' + WIKI page contains NO <film tag>')
 
       # If there was no film tag, looking for year else where.
       if year is None:
@@ -478,7 +510,7 @@ class PlexMovieAgent(Agent.Movies):
     except:
       sendToLog('ERROR: unable to parse wiki page!')
 
-    sendToDebugLog(':::::::::::::::::::: score ' + str(score) + ' for URL:\n    ' + wikiPageUrl)
+    sendToSearchDebugLog('::::::: initial score::: %d for WIKI page URL:\n    %s' % (score, wikiPageUrl))
     contentDict['score'] = score
     return contentDict
 
@@ -492,9 +524,9 @@ class PlexMovieAgent(Agent.Movies):
         determine page id, title year, and get the score.
     """
     try:
-      sendToLog('Searching for titles with name="%s" and year="%s"' % (str(mediaName), str(mediaYear)))
       prefMaxResults = int(Prefs[PREF_MAX_RESULTS_NAME])
       minPageScore = int(Prefs[PREF_MIN_PAGE_SCORE])
+      sendToSearchDebugLog('using PREF_MAX_RESULTS_NAME=%s and PREF_MIN_PAGE_SCORE=%s' % (str(prefMaxResults), str(minPageScore)))
       pageMatches = []
       queryStr = mediaName
       if mediaYear is not None:
@@ -513,11 +545,12 @@ class PlexMovieAgent(Agent.Movies):
           pageMatches = xmlResult.xpath('//api/query/search/p')
 
       # Grabbing the first N results (if there are any).
-      matchOrder = 0
+      itemIndex = 0
       for match in pageMatches:
         pageTitle = safeEncode(match.get('title'))
         pageId = None
         titleYear = None
+        sendToSearchDebugLog('*********** checking WIKI title page for "%s"...' % pageTitle)
         matchesMap = self.getAndParseItemsWikiPage(WIKI_TITLEPAGE_URL % pageTitle)
         if matchesMap is not None:
           if 'id' in matchesMap:
@@ -527,15 +560,18 @@ class PlexMovieAgent(Agent.Movies):
         if isBlank(pageId):
           pageId = self.titleAndYearToId(pageTitle, mediaYear)
 
-        score = scoreMovieMatch(mediaName, mediaYear, matchOrder, pageTitle, matchesMap)
+        score = scoreMovieMatch(mediaName, mediaYear, itemIndex, pageTitle, matchesMap)
+        sendToSearchDebugLog('::::::: final score::::: %d for WIKI title page "%s"' % (score, pageTitle))
         if score > minPageScore:  # Ignoring very low scored matches.
           results.Append(MetadataSearchResult(id = pageId,
                                               name = pageTitle,
                                               year = titleYear,
                                               lang = lang,
                                               score = score))
-          matchOrder += 1
-        if matchOrder == prefMaxResults:
+          itemIndex += 1
+        else:
+          sendToSearchDebugLog('::::::: "%s" page is SKIPPED' % pageTitle)
+        if itemIndex == prefMaxResults:
           break # Got enough matches, stop.
     except:
       sendToLog('ERROR: Unable to produce WIKI matches!')
@@ -562,20 +598,17 @@ class PlexMovieAgent(Agent.Movies):
     return imdbData
 
 
-def scoreMovieMatch(mediaName, mediaYear, matchOrder, pageTitle, matchesMap):
-  # Checking the title from filename with title in the match.
-  # If no words from title are found in the media name, this is not our match. 
-  titleScore = compareTitles(mediaName, pageTitle)
-  if not titleScore:
-    score = 0
-  else:
-    score = 50 + titleScore
-
-  if not matchOrder:
+def scoreMovieMatch(mediaName, mediaYear, itemIndex, pageTitle, matchesMap):
+  """ Checking the title from filename with title in the match.
+      If no words from title are found in the media name, this is not our match.
+  """
+  sendToSearchDebugLog('media name = "' + str(mediaName) + '", year = "' + str(mediaYear) + '", page title = "' + str(pageTitle) + '"...')
+  score = compareTitles(mediaName, pageTitle)
+  if not itemIndex:
     score += SCORE_FIRST_ITEM_BONUS
   else:  
     # Score is diminishes as we move down the list.
-    score = score - (matchOrder * SCORE_ORDER_PENALTY)
+    score = score - (itemIndex * SCORE_ORDER_PENALTY)
 
   # Adding matches from the wikipage (2 points for each find).
   if 'score' in matchesMap:
@@ -606,17 +639,25 @@ def scoreMovieMatch(mediaName, mediaYear, matchOrder, pageTitle, matchesMap):
   return score
 
 
-def compareTitles(titleFrom, titleTo):
-  """ Takes words from titleFrom string and checks
+def compareTitles(mediaName, pageTitle):
+  """ Takes words from mediaName string and checks
       if the titleTo contains these words. For each
       match, score is increased by 2.
   """
+  # Remove wiki's (фильм) or similar annotations from page title.
+  sanatizedTitle = MATCHER_FILM_TITLE_ANNOTATION.sub('', pageTitle).lower()
+  if mediaName == sanatizedTitle:
+    return 50 # Word-for-word, case ignored match.
   score = 0
-  title = titleTo.lower()
-  for word in titleFrom.lower().split():
-    if title.find(word) >= 0:
+  for word in mediaName.split():
+    if sanatizedTitle.find(word) >= 0:
       score += 2
-  return score
+      if score >= 10:
+        break
+  if score > 0:
+    return 30 + score
+  else:
+    return 0
 
 
 def getXmlFromWikiApiPage(wikiPageUrl):
@@ -691,13 +732,13 @@ def sanitizeWikiText(wikiText):
   wikiText = matcher.sub(r'\1', wikiText)
 
   # Removing a few tags (file tags - "[[Файл...]]").
-  matcher = re.compile(u'\[\[\u0424\u0430\u0439\u043B[^\[\]]+?\]\]', re.U)
+  matcher = re.compile('\[\[' + RU_File +'[^\[\]]+?\]\]', re.U)
   wikiText = matcher.sub('', wikiText)
 
   # This takes care of removing links and braces; for example,
   # "{{lang-sv|Arn – Tempelriddaren}}" would turn into just "Arn – Tempelriddaren".
-  # Note: negative lookahead is because we'd like to skip the Фильм tag.
-  matcher = re.compile(u'\{\{\s*((?!\u0424\u0438\u043B\u044C\u043C)[^\{\}]*?)\|([^\{\}]+?)\s*\}\}', re.M | re.L | re.I)
+  # Need a negative lookahead to skip the {{Фильм}} tag.
+  matcher = re.compile('\{\{\s*((?!' + WIKI_FILM_TAGNAME + ')[^\{\}]*?)\|([^\{\}]+?)\s*\}\}', re.M | re.L | re.I)
   wikiText = matcher.sub(r' \2 ', wikiText)
 
   # Removing a few hardcoded decoration tags.
@@ -732,9 +773,17 @@ def sanitizeWikiTextMore(wikiText):
   return wikiText.strip()
 
 
+def sanitizeWikiFilmTagText(wikiText):
+  """ Generic sanitization of wiki Film tag text.
+  """
+  # Unwrap image file tag, so "[[Файл:Dorogaja kopejka.jpg|220 px]]" would become just "Dorogaja kopejka.jpg".
+  matcher = re.compile('(' + RU_Izobrazhenie + '\s*=\s*)\[\[' + RU_File + '\s*:\s*([^\[\]]+?)\|([^\[\]]+?)\]\]', re.M | re.L)
+  wikiText = matcher.sub(r'\1\2', wikiText)
+  return sanitizeWikiText(wikiText)
+
+
 def getWikiSectionContent(sectionTitle, wikiText):
-  # TODO(zhenya): fix the last section case (when there is no other "==").
-  matcher = re.compile(u'^(?P<quotes>===?)\s' + sectionTitle + '\s(?P=quotes)\s*$\s*(.+?)\s*^==[^=]', re.S | re.M | re.I)
+  matcher = re.compile('^(?P<quotes>===?)\s' + sectionTitle + '\s(?P=quotes)\s*$\s*(.+?)\s*^(==|\{\{)[^=]', re.S | re.M | re.I)
   match = matcher.search(wikiText)
   if match:
     content = sanitizeWikiTextMore(match.groups(1)[1])
@@ -818,3 +867,11 @@ def sendToLog(msg):
 def sendToDebugLog(msg):
   if WIKIRU_IS_DEBUG:
     print 'wikiru::: ' + msg
+
+def sendToUpdateDebugLog(msg):
+  if WIKIRU_IS_UPDATE_DEBUG:
+    print 'wikiru-update::: ' + msg
+
+def sendToSearchDebugLog(msg):
+  if WIKIRU_IS_SEARCH_DEBUG:
+    print 'wikiru-search::: ' + msg
