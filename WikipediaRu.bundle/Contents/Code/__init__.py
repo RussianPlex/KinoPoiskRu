@@ -9,7 +9,7 @@ WIKIRU_IS_DEBUG = True
 
 # Current log level.
 # Supported values are: 0 = none, 1 = error, 2 = warning, 3 = info, 4 = fine, 5 = finest.
-wikiRuLogLevel = 1 # Default is error.
+wikiRuLogLevel = 5 # Default is error.
 
 
 ##############  Preference item names.
@@ -34,8 +34,9 @@ RU_film = u'\u0444\u0438\u043B\u044C\u043C' # фильм
 RU_Film = u'\u0424\u0438\u043B\u044C\u043C' # Фильм
 RU_multfilm = u'\u043C\u0443\u043B\u044C\u0442\u0444\u0438\u043B\u044C\u043C' # мультфильм
 RU_Multfilm = u'\u041C\u0443\u043B\u044C\u0442\u0444\u0438\u043B\u044C\u043C' # Мультфильм
+RU_Multserial = u'\u041C\u0443\u043B\u044C\u0442\u0441\u0435\u0440\u0438\u0430\u043B' # Мультсериал
 RU_Teleserial = u'\u0422\u0435\u043B\u0435\u0441\u0435\u0440\u0438\u0430\u043B' # Телесериал
-WIKI_FILM_TAGNAME = RU_Film + '|' + RU_Multfilm + '|' + RU_Teleserial
+WIKI_FILM_TAGNAME = RU_Film + '|' + RU_Multfilm + '|' + RU_Teleserial + '|' + RU_Multserial
 WIKI_TITLE_ANNOTATION = RU_film + '|' + RU_multfilm
 
 
@@ -56,6 +57,7 @@ MATCHER_ACTOR_LINE = re.compile('^\s*\W*\s*(\w+\s+\w+(\s+\w+)?)(\s*?|.*?)$', re.
 MATCHER_ACTOR_ROLE = re.compile('^\W*(\w.*?\w)\W*$', re.U | re.I)
 # Wiki's (фильм) or (мультфильм) title annotation.
 MATCHER_FILM_TITLE_ANNOTATION = re.compile('\s*\((' + WIKI_TITLE_ANNOTATION + ')\)\s*$', re.U | re.I)
+MATCHER_SANITIZED_YEAR = re.compile('.*?(\d\d\d\d).*', re.S)
 
 ############## MoviePosterDB constants.
 MPDB_ROOT = 'http://movieposterdb.plexapp.com'
@@ -420,7 +422,7 @@ class PlexMovieAgent(Agent.Movies):
                 tagline = sanitizeWikiTextMore(tagline)
                 if MATCHER_FIRST_LETTER.search(tagline):
                   tagline = tagline.capitalize() # Only capitalizing if the first one is a letter.
-                sendToFineLog('::::::::::: tagline: %s...' % tagline[:40])
+                sendToFineLog('tagline: %s...' % tagline[:40])
                 metadata.tagline = tagline
 
         # Original title: text after "| ОригНаз = ".
@@ -432,10 +434,14 @@ class PlexMovieAgent(Agent.Movies):
 
         # Year: a number after "| Год = ".
         value = searchForFilmTagMatch(u'\u0413\u043E\u0434', 'year', filmContent)
+        if value is None:
+          # Looking for Премьера instead.
+          value = searchForFilmTagMatch(u'\u041F\u0440\u0435\u043C\u044C\u0435\u0440\u0430', 'year', filmContent)
         if value is not None:
           score += 1
-          year = str(parseInt(value))
-          # Year is set below.
+          match = MATCHER_SANITIZED_YEAR.search(value)
+          if match:
+            year = match.groups()[0] # Year is set below.
 
         # Duration: a number after "| Время = ".
         duration = searchForFilmTagMatch(u'\u0412\u0440\u0435\u043C\u044F', 'duration', filmContent)
@@ -551,7 +557,7 @@ class PlexMovieAgent(Agent.Movies):
         pageTitle = safeEncode(match.get('title'))
         pageId = None
         titleYear = None
-        sendToFinestLog('*********** checking WIKI title page for "%s"...' % pageTitle)
+        sendToFineLog('@@@@@@@@@@@@@@@ checking WIKI title page for "%s"...' % pageTitle)
         matchesMap = self.getAndParseItemsWikiPage(WIKI_TITLEPAGE_URL % pageTitle)
         if matchesMap is not None:
           if 'id' in matchesMap:
@@ -701,7 +707,7 @@ def searchForFilmTagMatch(name, key, text, dict=None, isMultiLine=False):
       Parsed group 1 is returned if it's not blank; otherwise None is returned.
       If dict is present, the value will be placed there for the provided key.
   """
-  matcher = re.compile(u'^\s*\|\s*' + name + '\s*=\s*(.*?\||\s*$|.*?\s*$)', re.I | re.M | re.U | re.S)
+  matcher = re.compile('^\s*\|\s*' + name + '\s*=\s*(.*?\||\s*$|.*?\s*$)', re.I | re.M | re.U | re.S)
   match = matcher.search(text)
   if match:
     value = match.groups(1)[0].strip('|\t\n\r\f\v')
@@ -711,9 +717,10 @@ def searchForFilmTagMatch(name, key, text, dict=None, isMultiLine=False):
         sendToFineLog('  ... %s: [%s]' % (key, ', '.join(values)))
         return values
       else:
+        value = value.strip()
         sendToFineLog('  ... %s: "%s"' % (key, value[:40]))
         if dict is not None:
-          dict[key] = value.strip()
+          dict[key] = value
         return value
   sendToFineLog('  ... %s: BLANK' % key)
   return None
