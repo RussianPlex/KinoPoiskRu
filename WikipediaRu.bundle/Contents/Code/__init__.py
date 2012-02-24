@@ -62,6 +62,7 @@ MATCHER_SANITIZED_YEAR = re.compile('.*?(\d\d\d\d).*', re.S)
 ############## MoviePosterDB constants.
 MPDB_ROOT = 'http://movieposterdb.plexapp.com'
 MPDB_JSON = MPDB_ROOT + '/1/request.json?imdb_id=%s&api_key=p13x2&secret=%s&width=720&thumb_width=100'
+MPDB_JSON = MPDB_ROOT + '/1/request.json?imdb_id=%s&api_key=p13x2&secret=%s&width=720&thumb_width=100'
 MPDB_SECRET = 'e3c77873abc4866d9e28277a9114c60c'
 
 ############## Constants that influence matching score on titles.
@@ -86,7 +87,7 @@ DEFAULT_ACTOR_ROLE = 'актер'
 
 
 def Start():
-  sendToLog('***** START ***** %s' % USER_AGENT)
+  sendToInfoLog('***** START ***** %s' % USER_AGENT)
   # Setting cache experation time.
   prefCache = Prefs[PREF_CACHE_TIME_NAME]
   if prefCache == "1 минута":
@@ -104,11 +105,11 @@ def Start():
   else:
     cacheExp = CACHE_1WEEK
   HTTP.CacheTime = cacheExp
-  sendToLog('PREF: Setting cache expiration to %d seconds (%s)' % (cacheExp, prefCache))
-  sendToLog('PREF: WIKI max results is set to %s' % Prefs[PREF_MAX_RESULTS_NAME])
-  sendToLog('PREF: Min page score is set to %s' % Prefs[PREF_MIN_PAGE_SCORE])
-  sendToLog('PREF: Ignore WIKI categories is set to %s' % str(Prefs[PREF_CATEGORIES_NAME]))
-  sendToLog('PREF: Parse all actors is set to %s' % str(Prefs[PREF_GET_ALL_ACTORS]))
+  sendToInfoLog('PREF: Setting cache expiration to %d seconds (%s)' % (cacheExp, prefCache))
+  sendToInfoLog('PREF: WIKI max results is set to %s' % Prefs[PREF_MAX_RESULTS_NAME])
+  sendToInfoLog('PREF: Min page score is set to %s' % Prefs[PREF_MIN_PAGE_SCORE])
+  sendToInfoLog('PREF: Ignore WIKI categories is set to %s' % str(Prefs[PREF_CATEGORIES_NAME]))
+  sendToInfoLog('PREF: Parse all actors is set to %s' % str(Prefs[PREF_GET_ALL_ACTORS]))
 
 
 class PlexMovieAgent(Agent.Movies):
@@ -249,7 +250,7 @@ class PlexMovieAgent(Agent.Movies):
           response = sendHttpRequest(thumbUrl)
           metadata.posters[url] = Proxy.Preview(response, sort_order = sortOrder)
           posters_valid_names.append(url)
-          sendToLog('Setting a poster from wikipedia: "%s"' % url)
+          sendToFineLog('Setting a poster from wikipedia: "%s"' % url)
     except:
       sendToErrorLog('unable to fetch art work.')
 
@@ -616,6 +617,11 @@ def scoreMovieMatch(mediaName, mediaYear, itemIndex, pageTitle, matchesMap):
   """
   sendToFinestLog('media name = "' + str(mediaName) + '", year = "' + str(mediaYear) + '", page title = "' + str(pageTitle) + '"...')
   score = compareTitles(mediaName, pageTitle)
+  sendToFinestLog('title compare score: ' + str(score))
+  if not score:
+    # Title is too different - consider it's no match.
+    return 0
+
   if not itemIndex:
     score += SCORE_FIRST_ITEM_BONUS
   else:  
@@ -791,7 +797,7 @@ def sanitizeWikiFilmTagText(wikiText):
   """
   # Unwrap image file tag, so "[[Файл:Dorogaja kopejka.jpg|220 px]]" or "[[Файл:Dorogaja kopejka.jpg]]"
   # would become just "Dorogaja kopejka.jpg".
-  matcher = re.compile('(' + RU_Izobrazhenie + '\s*=\s*)\[\[' + RU_File + '\s*:\s*([^\[\]]+?)(\|([^\[\]]+?))?\]\]', re.U | re.I)
+  matcher = re.compile('(' + RU_Izobrazhenie + '\s*=\s*)\[\[' + RU_File + '\s*:\s*([^\[\]]+?)(\|([^\[\]]+?))?\]\].*', re.U | re.I)
   wikiText = matcher.sub(r'\1\2', wikiText)
   return sanitizeWikiText(wikiText)
 
