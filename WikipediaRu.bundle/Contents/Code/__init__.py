@@ -210,6 +210,7 @@ class PlexMovieAgent(Agent.Movies):
     """
     # TODO(zhenya): need to validate the size and proportions of the image.
     # TODO(zhenya): look for other images on IMDB or Google if wikiImgName is not set?
+    sendToFinestLog('fetchAndSetWikiArtwork: WIKI image "%s".' % str(wikiImgName))
     posters_valid_names = list()
     art_valid_names = list()
     try:
@@ -222,6 +223,7 @@ class PlexMovieAgent(Agent.Movies):
       # Fetching an image from the wikipedia.
       if wikiImgName is not None:
         wikiImgQueryUrl = WIKI_QUERYFILE_URL % wikiImgName
+        sendToFinestLog('loading URL "%s".' % str(wikiImgQueryUrl))
         xmlResult = getXmlFromWikiApiPage(wikiImgQueryUrl)
         pathMatch = xmlResult.xpath('//api/query/pages/page')
         if not len(pathMatch):
@@ -261,11 +263,12 @@ class PlexMovieAgent(Agent.Movies):
     # - metadata.id - and we use it to represent a WIKI id. When support for an
     # alternative id is added, we could pass it and the next agent (e.g. themoviedb)
     # could use it.
+    sendToFinestLog('looking for images on MPDB...')
     secret = Hash.MD5( ''.join([MPDB_SECRET, imdb_code]))[10:22]
     queryJSON = JSON.ObjectFromURL(MPDB_JSON % (imdb_code, secret), cacheTime=10)
-
     i = 0
     if not queryJSON.has_key('errors') and queryJSON.has_key('posters'):
+      sendToFinestLog('found images on MPDB')
       for poster in queryJSON['posters']:
         imageUrl = MPDB_ROOT + '/' + poster['image_location']
         thumbUrl = MPDB_ROOT + '/' + poster['thumbnail_location']
@@ -275,7 +278,9 @@ class PlexMovieAgent(Agent.Movies):
           metadata.posters[full_image_url] = Proxy.Preview(sendHttpRequest(thumbUrl), sort_order = i)
           posters_valid_names.append(full_image_url)
           i += 1
-          sendToFineLog('Setting a poster from MPDB: "%s"' % imageUrl)
+          sendToFineLog('adding a poster from MPDB: "%s"' % imageUrl)
+        else:
+          sendToFinestLog('MPDB poster is skipped: "%s"' % imageUrl)
     return i
 
 
@@ -422,7 +427,7 @@ class PlexMovieAgent(Agent.Movies):
                 tagline = sanitizeWikiTextMore(tagline)
                 if MATCHER_FIRST_LETTER.search(tagline):
                   tagline = tagline.capitalize() # Only capitalizing if the first one is a letter.
-                sendToFineLog('tagline: %s...' % tagline[:40])
+                sendToFineLog(' ... tagline: %s...' % tagline[:50])
                 metadata.tagline = tagline
 
         # Original title: text after "| ОригНаз = ".
@@ -784,8 +789,9 @@ def sanitizeWikiTextMore(wikiText):
 def sanitizeWikiFilmTagText(wikiText):
   """ Generic sanitization of wiki Film tag text.
   """
-  # Unwrap image file tag, so "[[Файл:Dorogaja kopejka.jpg|220 px]]" would become just "Dorogaja kopejka.jpg".
-  matcher = re.compile('(' + RU_Izobrazhenie + '\s*=\s*)\[\[' + RU_File + '\s*:\s*([^\[\]]+?)\|([^\[\]]+?)\]\]', re.M | re.L)
+  # Unwrap image file tag, so "[[Файл:Dorogaja kopejka.jpg|220 px]]" or "[[Файл:Dorogaja kopejka.jpg]]"
+  # would become just "Dorogaja kopejka.jpg".
+  matcher = re.compile('(' + RU_Izobrazhenie + '\s*=\s*)\[\[' + RU_File + '\s*:\s*([^\[\]]+?)(\|([^\[\]]+?))?\]\]', re.M | re.L)
   wikiText = matcher.sub(r'\1\2', wikiText)
   return sanitizeWikiText(wikiText)
 
@@ -847,7 +853,7 @@ def parseWikiCountries(countriesStr, metadata):
         "{{SUN}} <br />{{UKR}}"
         "{{Флаг Израиля}} Израиль<br />{{Флаг США}} США"
         "СССР — Япония"
-      List of sanatized country names is returned.
+      List of sanitized country names is returned.
   """
   # TODO(zhenya): Implement parsing countries.
   pass
