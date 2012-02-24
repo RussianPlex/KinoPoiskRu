@@ -6,9 +6,10 @@ AGENT_VERSION = '0.1'
 USER_AGENT = 'Plex WikipediaRu Metadata Agent (+http://www.plexapp.com/) v.%s' % AGENT_VERSION
 
 WIKIRU_IS_DEBUG = True
-WIKIRU_IS_SEARCH_DEBUG = True
-WIKIRU_IS_UPDATE_DEBUG = False
-isRunningSearch = False
+
+# Current log level.
+# Supported values are: 0 = none, 1 = error, 2 = warning, 3 = info, 4 = fine, 5 = finest.
+wikiRuLogLevel = 1 # Default is error.
 
 
 ##############  Preference item names.
@@ -124,25 +125,23 @@ class PlexMovieAgent(Agent.Movies):
         wiki page id, title, year, and the score (how good we think the match
         is on the scale of 1 - 100).
     """
-    isRunningSearch = True
-    sendToSearchDebugLog('SEARCH START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
+    sendToInfoLog('SEARCH START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
     year = None
     if media.year:
       year = safeEncode(media.year)
-    sendToSearchDebugLog('searching for name="%s", year="%s", guid="%s", hash="%s"...' %
+    sendToInfoLog('searching for name="%s", year="%s", guid="%s", hash="%s"...' %
         (str(media.name), str(year), str(media.guid), str(media.hash)))
 
     # Looking for wiki pages for this title.
     self.findWikiPageMatches(media.name, year, results, lang)
     results.Sort('score', descending=True)
-    if WIKIRU_IS_SEARCH_DEBUG:
-      sendToSearchDebugLog('search produced %d results:' % len(results))
+    if wikiRuLogLevel >= 3:
+      sendToInfoLog('search produced %d results:' % len(results))
       index = 0
       for result in results:
-        sendToSearchDebugLog(' ... result %d: id="%s", name="%s", year="%s", score="%d".' % (index, result.id, result.name, str(result.year), result.score))
+        sendToInfoLog(' ... result %d: id="%s", name="%s", year="%s", score="%d".' % (index, result.id, result.name, str(result.year), result.score))
         index += 1
-    sendToSearchDebugLog('SEARCH END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
-    isRunningSearch = False
+    sendToInfoLog('SEARCH END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
 
   ##############################################################################
@@ -154,16 +153,17 @@ class PlexMovieAgent(Agent.Movies):
        it to fetch the page, which is going to be used to populate the
        media item record. Another field that could be used is metadata.title.
     """
-    isRunningSearch = False
+    sendToInfoLog('UPDATE START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
     part = media.items[0].parts[0]
     filename = part.file.decode('utf-8')
-    sendToDebugLog('WikipediaRu.update: filename="%s", guid="%s"' % (filename, metadata.guid))
+    sendToInfoLog('filename="%s", guid="%s"' % (filename, metadata.guid))
 
     matcher = re.compile(r'//(\d+)\?')
     match = matcher.search(metadata.guid)
     if match:
       wikiId = match.groups(1)[0]
     else:
+      sendToErrorLog('no wiki id is found!')
       raise Exception('ERROR: no wiki id is found!')
 
     # Set the title. FIXME, this won't work after a queued restart.
@@ -195,6 +195,7 @@ class PlexMovieAgent(Agent.Movies):
 
     # Getting artwork.
     self.fetchAndSetWikiArtwork(metadata, wikiImgName, imdbId)
+    sendToInfoLog('UPDATE END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
 
   def fetchAndSetWikiArtwork(self, metadata, wikiImgName, imdbId):
@@ -222,17 +223,17 @@ class PlexMovieAgent(Agent.Movies):
         xmlResult = getXmlFromWikiApiPage(wikiImgQueryUrl)
         pathMatch = xmlResult.xpath('//api/query/pages/page')
         if not len(pathMatch):
-          sendToLog('ERROR: unable to parse page "%s".' % wikiImgQueryUrl)
+          sendToErrorLog('unable to parse page "%s".' % wikiImgQueryUrl)
           raise Exception
 
         missing = pathMatch[0].get('missing')
         if missing is not None:
-          sendToLog('ERROR: file "%s" does not seem to exist.' % wikiImgName)
+          sendToErrorLog('file "%s" does not seem to exist.' % wikiImgName)
           raise Exception
 
         pathMatch = pathMatch[0].xpath('//imageinfo/ii')
         if not len(pathMatch):
-          sendToLog('ERROR: image section is not found in a WIKI response.')
+          sendToErrorLog('image section is not found in a WIKI response.')
           raise Exception
 
         thumbUrl = pathMatch[0].get('url')
@@ -243,7 +244,7 @@ class PlexMovieAgent(Agent.Movies):
           posters_valid_names.append(url)
           sendToLog('Setting a poster from wikipedia: "%s"' % url)
     except:
-      sendToLog('ERROR: unable to fetch art work.')
+      sendToErrorLog('unable to fetch art work.')
 
     metadata.posters.validate_keys(posters_valid_names)
     metadata.art.validate_keys(art_valid_names)
@@ -272,7 +273,7 @@ class PlexMovieAgent(Agent.Movies):
           metadata.posters[full_image_url] = Proxy.Preview(sendHttpRequest(thumbUrl), sort_order = i)
           posters_valid_names.append(full_image_url)
           i += 1
-          sendToDebugLog('Setting a poster from MPDB: "%s"' % imageUrl)
+          sendToFineLog('Setting a poster from MPDB: "%s"' % imageUrl)
     return i
 
 
@@ -344,22 +345,22 @@ class PlexMovieAgent(Agent.Movies):
       xmlResult = getXmlFromWikiApiPage(wikiPageUrl)
       pathMatch = xmlResult.xpath('//api/query/pages/page')
       if not len(pathMatch):
-        sendToLog('ERROR: unable to parse page "%s".' % wikiPageUrl)
+        sendToErrorLog('unable to parse page "%s".' % wikiPageUrl)
         return None
 
       missing = pathMatch[0].get('missing')
       if missing is not None:
-        sendToLog('ERROR: page "%s" does not seem to exist.' % wikiPageUrl)
+        sendToErrorLog('page "%s" does not seem to exist.' % wikiPageUrl)
         return None
 
       contentDict['id'] = pathMatch[0].get('pageid')
       pathMatch = pathMatch[0].xpath('//revisions/rev')
       if not len(pathMatch):
-        sendToLog('ERROR: page revision is not found in a WIKI response.')
+        sendToErrorLog('page revision is not found in a WIKI response.')
         return None
 
       # This is the content of the entire page for our title.
-      sendToSearchDebugLog('WIKI page is fetched, parsing it...')
+      sendToFineLog('WIKI page is fetched, parsing it...')
       wikiText = safeEncode(pathMatch[0].text)
       sanitizedText = sanitizeWikiText(wikiText)
       contentDict['all'] = sanitizedText
@@ -368,7 +369,7 @@ class PlexMovieAgent(Agent.Movies):
       if parseCategories and metadata is not None:
         # Looking for something like "Категория:Мосфильм"...
         categories = MATCHER_CATEGORY.findall(sanitizedText)
-        sendToSearchDebugLog(' + WIKI page contains %d <categories>' % len(categories))
+        sendToFineLog('WIKI page contains %d <categories>' % len(categories))
         for category in categories:
           metadata.collections.add(category)
 
@@ -419,7 +420,7 @@ class PlexMovieAgent(Agent.Movies):
                 tagline = sanitizeWikiTextMore(tagline)
                 if MATCHER_FIRST_LETTER.search(tagline):
                   tagline = tagline.capitalize() # Only capitalizing if the first one is a letter.
-                sendToDebugLog('::::::::::: tagline: %s...' % tagline[:40])
+                sendToFineLog('::::::::::: tagline: %s...' % tagline[:40])
                 metadata.tagline = tagline
 
         # Original title: text after "| ОригНаз = ".
@@ -494,7 +495,7 @@ class PlexMovieAgent(Agent.Movies):
           if metadata is not None:
             parseWikiCountries(countries, metadata)
       else:
-        sendToSearchDebugLog(' + WIKI page contains NO <film tag>')
+        sendToInfoLog(' + WIKI page contains NO <film tag>')
 
       # If there was no film tag, looking for year else where.
       if year is None:
@@ -508,9 +509,9 @@ class PlexMovieAgent(Agent.Movies):
           metadata.originally_available_at = Datetime.ParseDate('%s-01-01' % year).date()
 
     except:
-      sendToLog('ERROR: unable to parse wiki page!')
+      sendToErrorLog('unable to parse wiki page!')
 
-    sendToSearchDebugLog('::::::: initial score::: %d for WIKI page URL:\n    %s' % (score, wikiPageUrl))
+    sendToFinestLog('::::::: initial score::: %d for WIKI page URL:\n    %s' % (score, wikiPageUrl))
     contentDict['score'] = score
     return contentDict
 
@@ -526,7 +527,7 @@ class PlexMovieAgent(Agent.Movies):
     try:
       prefMaxResults = int(Prefs[PREF_MAX_RESULTS_NAME])
       minPageScore = int(Prefs[PREF_MIN_PAGE_SCORE])
-      sendToSearchDebugLog('using PREF_MAX_RESULTS_NAME=%s and PREF_MIN_PAGE_SCORE=%s' % (str(prefMaxResults), str(minPageScore)))
+      sendToFineLog('using PREF_MAX_RESULTS_NAME=%s and PREF_MIN_PAGE_SCORE=%s' % (str(prefMaxResults), str(minPageScore)))
       pageMatches = []
       queryStr = mediaName
       if mediaYear is not None:
@@ -534,12 +535,12 @@ class PlexMovieAgent(Agent.Movies):
       xmlResult = getXmlFromWikiApiPage(WIKI_QUERY_URL % queryStr)
       pathMatch = xmlResult.xpath('//api/query/searchinfo')
       if not len(pathMatch):
-        sendToLog('ERROR: searchinfo is not found in a WIKI response.')
+        sendToErrorLog('searchinfo is not found in a WIKI response.')
         raise Exception
       else:
         if pathMatch[0].get('totalhits') == '0':
           # TODO - implement case
-          sendToLog('INFO: No hits found! Getting a suggestion... NOT SUPPORTED YET!')
+          sendToFineLog('No hits found! Getting a suggestion... NOT SUPPORTED YET!')
           raise Exception
         else:
           pageMatches = xmlResult.xpath('//api/query/search/p')
@@ -550,7 +551,7 @@ class PlexMovieAgent(Agent.Movies):
         pageTitle = safeEncode(match.get('title'))
         pageId = None
         titleYear = None
-        sendToSearchDebugLog('*********** checking WIKI title page for "%s"...' % pageTitle)
+        sendToFinestLog('*********** checking WIKI title page for "%s"...' % pageTitle)
         matchesMap = self.getAndParseItemsWikiPage(WIKI_TITLEPAGE_URL % pageTitle)
         if matchesMap is not None:
           if 'id' in matchesMap:
@@ -561,7 +562,7 @@ class PlexMovieAgent(Agent.Movies):
           pageId = self.titleAndYearToId(pageTitle, mediaYear)
 
         score = scoreMovieMatch(mediaName, mediaYear, itemIndex, pageTitle, matchesMap)
-        sendToSearchDebugLog('::::::: final score::::: %d for WIKI title page "%s"' % (score, pageTitle))
+        sendToFinestLog('::::::: final score::::: %d for WIKI title page "%s"' % (score, pageTitle))
         if score > minPageScore:  # Ignoring very low scored matches.
           results.Append(MetadataSearchResult(id = pageId,
                                               name = pageTitle,
@@ -570,11 +571,11 @@ class PlexMovieAgent(Agent.Movies):
                                               score = score))
           itemIndex += 1
         else:
-          sendToSearchDebugLog('::::::: "%s" page is SKIPPED' % pageTitle)
+          sendToFineLog('::::::: "%s" page is SKIPPED' % pageTitle)
         if itemIndex == prefMaxResults:
           break # Got enough matches, stop.
     except:
-      sendToLog('ERROR: Unable to produce WIKI matches!')
+      sendToErrorLog('unable to produce WIKI matches!')
 
 
   def getDataFromImdb(self, imdbId):
@@ -592,9 +593,9 @@ class PlexMovieAgent(Agent.Movies):
         if match:
           rating = match.groups(1)[0]
           imdbData['rating'] = rating
-        sendToDebugLog('  ... IMDB rating: "%s"' % str(rating))
+        sendToFineLog('  ... IMDB rating: "%s"' % str(rating))
     except:
-      sendToLog('ERROR: unable to fetch or parse IMDB data.')
+      sendToErrorLog('unable to fetch or parse IMDB data.')
     return imdbData
 
 
@@ -602,7 +603,7 @@ def scoreMovieMatch(mediaName, mediaYear, itemIndex, pageTitle, matchesMap):
   """ Checking the title from filename with title in the match.
       If no words from title are found in the media name, this is not our match.
   """
-  sendToSearchDebugLog('media name = "' + str(mediaName) + '", year = "' + str(mediaYear) + '", page title = "' + str(pageTitle) + '"...')
+  sendToFinestLog('media name = "' + str(mediaName) + '", year = "' + str(mediaYear) + '", page title = "' + str(pageTitle) + '"...')
   score = compareTitles(mediaName, pageTitle)
   if not itemIndex:
     score += SCORE_FIRST_ITEM_BONUS
@@ -707,14 +708,14 @@ def searchForFilmTagMatch(name, key, text, dict=None, isMultiLine=False):
     if not isBlank(value):
       if isMultiLine:
         values = parseFilmLineItems(value)
-        sendToDebugLog('  ... %s: [%s]' % (key, ', '.join(values)))
+        sendToFineLog('  ... %s: [%s]' % (key, ', '.join(values)))
         return values
       else:
-        sendToDebugLog('  ... %s: "%s"' % (key, value[:40]))
+        sendToFineLog('  ... %s: "%s"' % (key, value[:40]))
         if dict is not None:
           dict[key] = value.strip()
         return value
-  sendToDebugLog('  ... %s: BLANK' % key)
+  sendToFineLog('  ... %s: BLANK' % key)
   return None
 
 
@@ -788,7 +789,7 @@ def getWikiSectionContent(sectionTitle, wikiText):
   if match:
     content = sanitizeWikiTextMore(match.groups(1)[1])
     if not isBlank(content):
-#      sendToDebugLog('####### section "%s": %s...' % (sectionTitle, content[:40]))
+      sendToFinestLog('------ section "%s": %s...' % (sectionTitle, content[:40]))
       return content
   return None
 
@@ -809,7 +810,7 @@ def parseActorsInfo(roles, metadata, wikiText, isGetAllActors):
           roleName = DEFAULT_ACTOR_ROLE
         actorsMap[actorName] = roleName
   except:
-    sendToLog('ERROR: unable to parse actors!')
+    sendToErrorLog('unable to parse actors!')
 
   try:
     # Stars should go first so they end up on the top of the list.
@@ -821,7 +822,7 @@ def parseActorsInfo(roles, metadata, wikiText, isGetAllActors):
         roleName = DEFAULT_ACTOR_ROLE
       role.role = roleName
       # role.photo = 'http:// todo...'
-      sendToDebugLog('  ... actor "%s", role="%s"' % (actorName, roleName))
+      sendToFineLog('  ... actor "%s", role="%s"' % (actorName, roleName))
 
     if isGetAllActors:
       for actorName, roleName in actorsMap.iteritems():
@@ -829,9 +830,9 @@ def parseActorsInfo(roles, metadata, wikiText, isGetAllActors):
         role.actor = actorName
         role.role = roleName
         # role.photo = 'http:// todo...'
-        sendToDebugLog('  ... actor "%s", role="%s"' % (actorName, roleName))
+        sendToFineLog('  ... actor "%s", role="%s"' % (actorName, roleName))
   except:
-    sendToLog('ERROR: unable to add actors!')
+    sendToErrorLog('unable to add actors!')
 
 
 def parseWikiCountries(countriesStr, metadata):
@@ -853,25 +854,40 @@ def parseInt(string):
   else:
     return None
 
+
 def sendHttpRequest(url):
   # Note that these headers are not strictly necessary.
   headers = {'User-agent': USER_AGENT, 'Accept': 'text/html'}
   return HTTP.Request(url, headers = headers)
+
+
+def sendToFinestLog(msg):
+  if wikiRuLogLevel >= 5:
+    sendToLog('FINEST: ' + msg)
+
+
+def sendToFineLog(msg):
+  if wikiRuLogLevel >= 4:
+    sendToLog('FINE: ' + msg)
+
+
+def sendToInfoLog(msg):
+  if wikiRuLogLevel >= 3:
+    sendToLog('INFO: ' + msg)
+
+
+def sendToWarnLog(msg):
+  if wikiRuLogLevel >= 2:
+    sendToLog('WARN: ' + msg)
+
+
+def sendToErrorLog(msg):
+  if wikiRuLogLevel >= 1:
+    sendToLog('ERROR: ' + msg)
+
 
 def sendToLog(msg):
   if WIKIRU_IS_DEBUG:
     print msg
   else:
     Log(msg)
-
-def sendToDebugLog(msg):
-  if WIKIRU_IS_DEBUG:
-    print 'wikiru::: ' + msg
-
-def sendToUpdateDebugLog(msg):
-  if WIKIRU_IS_UPDATE_DEBUG:
-    print 'wikiru-update::: ' + msg
-
-def sendToSearchDebugLog(msg):
-  if WIKIRU_IS_SEARCH_DEBUG:
-    print 'wikiru-search::: ' + msg
