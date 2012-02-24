@@ -42,7 +42,7 @@ WIKI_TITLE_ANNOTATION = RU_film + '|' + RU_multfilm
 
 ############## Compiled regexes.
 # WIKI film tag: {{Фильм }} or {{Мультфильм }} or {{Телесериал }}.
-MATCHER_FILM = re.compile('\{\{\s*(' + WIKI_FILM_TAGNAME + ')\\b\s*(([^\{\}]*?\{\{[^\{\}]*?\}\}[^\{\}]*?)*|.*?)\s*\}\}', re.S | re.M | re.U | re.I)
+MATCHER_FILM_TAG = re.compile('\{\{\s*(' + WIKI_FILM_TAGNAME + ')\\b\s*(([^\{\}]*?\{\{[^\{\}]*?\}\}[^\{\}]*?)*|.*?)\s*\}\}', re.S | re.M | re.U | re.I)
 # IMDB rating, something like this "<span class="rating-rating">5.0<span>".
 MATCHER_IMDB_RATING = re.compile('<div\s+class\s*=\s*"star-box-giga-star">\s*(\d+\.\d+)\s*</div>', re.M | re.S)
 MATCHER_FIRST_INTEGER = re.compile('\s*(\d+)\D*', re.U)
@@ -136,6 +136,9 @@ class PlexMovieAgent(Agent.Movies):
 
     # Looking for wiki pages for this title.
     self.findWikiPageMatches(media.name, year, results, lang)
+    if not len(results):
+      # Modify (relax) the query and look for more pages.
+      self.findWikiPageMatches(media.name, year, results, lang, isRelax=True)
     results.Sort('score', descending=True)
     if wikiRuLogLevel >= 3:
       sendToInfoLog('search produced %d results:' % len(results))
@@ -394,10 +397,11 @@ class PlexMovieAgent(Agent.Movies):
           metadata.summary = metadata.summary + '\n\nИнтересные факты:\n' + facts
 
       # Looking for the {{Фильм}} tag.
-      match = MATCHER_FILM.search(wikiText)
+      match = MATCHER_FILM_TAG.search(wikiText)
       year = None
       if match:
         filmContent = sanitizeWikiFilmTagText(match.groups(1)[1])
+        sendToFinestLog('*** WIKI film tag:\n%s' % filmContent)
         contentDict['film'] = filmContent
         score += 2
 
@@ -438,15 +442,7 @@ class PlexMovieAgent(Agent.Movies):
             metadata.original_title = origTitle
 
         # Year: a number after "| Год = ".
-        value = searchForFilmTagMatch(u'\u0413\u043E\u0434', 'year', filmContent)
-        if value is None:
-          # Looking for Премьера instead.
-          value = searchForFilmTagMatch(u'\u041F\u0440\u0435\u043C\u044C\u0435\u0440\u0430', 'year', filmContent)
-        if value is not None:
-          score += 1
-          match = MATCHER_SANITIZED_YEAR.search(value)
-          if match:
-            year = match.groups()[0] # Year is set below.
+        year = filmTagParseYear(filmContent)
 
         # Duration: a number after "| Время = ".
         duration = searchForFilmTagMatch(u'\u0412\u0440\u0435\u043C\u044F', 'duration', filmContent)
@@ -494,6 +490,9 @@ class PlexMovieAgent(Agent.Movies):
 
         # Actors: "<br/> or ,"-separated values after "| Актёры = ".
         roles = searchForFilmTagMatch(u'\u0410\u043A\u0442\u0451\u0440\u044B', 'roles', filmContent, isMultiLine = True)
+        if roles is None:
+          # Also look for "в ролях".
+          roles = searchForFilmTagMatch(u'\u0432\s+\u0440\u043E\u043B\u044F\u0445', 'roles', filmContent, isMultiLine = True)
         if roles is not None and len(roles) > 0:
           score += 1
           if metadata is not None:
@@ -506,7 +505,7 @@ class PlexMovieAgent(Agent.Movies):
           if metadata is not None:
             parseWikiCountries(countries, metadata)
       else:
-        sendToInfoLog(' + WIKI page contains NO <film tag>')
+        sendToInfoLog('WIKI page contains NO <film tag>')
 
       # If there was no film tag, looking for year else where.
       if year is None:
@@ -514,6 +513,7 @@ class PlexMovieAgent(Agent.Movies):
         if match:
           year = match.groups(1)[0]
       if year is not None:
+        score += 1
         contentDict['year'] = year
         if metadata is not None:
           metadata.year = int(year)
@@ -527,7 +527,7 @@ class PlexMovieAgent(Agent.Movies):
     return contentDict
 
 
-  def findWikiPageMatches(self, mediaName, mediaYear, results, lang):
+  def findWikiPageMatches(self, mediaName, mediaYear, results, lang, isRelax=False):
     """ Using Wikipedia query API, tries to determine most probable pages
         for the media item we are looking for. The matches are added to the
         passed results list as MetadataSearchResult objects.
@@ -541,7 +541,7 @@ class PlexMovieAgent(Agent.Movies):
       sendToFineLog('using PREF_MAX_RESULTS_NAME=%s and PREF_MIN_PAGE_SCORE=%s' % (str(prefMaxResults), str(minPageScore)))
       pageMatches = []
       queryStr = mediaName
-      if mediaYear is not None:
+      if not isRelax and mediaYear is not None:
         queryStr += '_' + mediaYear
       xmlResult = getXmlFromWikiApiPage(WIKI_QUERY_URL % queryStr)
       pathMatch = xmlResult.xpath('//api/query/searchinfo')
@@ -791,13 +791,13 @@ def sanitizeWikiFilmTagText(wikiText):
   """
   # Unwrap image file tag, so "[[Файл:Dorogaja kopejka.jpg|220 px]]" or "[[Файл:Dorogaja kopejka.jpg]]"
   # would become just "Dorogaja kopejka.jpg".
-  matcher = re.compile('(' + RU_Izobrazhenie + '\s*=\s*)\[\[' + RU_File + '\s*:\s*([^\[\]]+?)(\|([^\[\]]+?))?\]\]', re.M | re.L)
+  matcher = re.compile('(' + RU_Izobrazhenie + '\s*=\s*)\[\[' + RU_File + '\s*:\s*([^\[\]]+?)(\|([^\[\]]+?))?\]\]', re.U | re.I)
   wikiText = matcher.sub(r'\1\2', wikiText)
   return sanitizeWikiText(wikiText)
 
 
 def getWikiSectionContent(sectionTitle, wikiText):
-  matcher = re.compile('^(?P<quotes>===?)\s' + sectionTitle + '\s(?P=quotes)\s*$\s*(.+?)\s*^(==|\{\{)[^=]', re.S | re.M | re.I)
+  matcher = re.compile('^(?P<quotes>===?)\s' + sectionTitle + '\s(?P=quotes)\s*$\s*(.+?)\s*^(==|\{\{)[^=]', re.S | re.U | re.M | re.I)
   match = matcher.search(wikiText)
   if match:
     content = sanitizeWikiTextMore(match.groups(1)[1])
@@ -857,6 +857,25 @@ def parseWikiCountries(countriesStr, metadata):
   """
   # TODO(zhenya): Implement parsing countries.
   pass
+
+
+def filmTagParseYear(filmContent):
+  """ Parses year from a film tag (a number after "| Год = "), also
+      considering the following entries: "Премьера" and "первый_показ".
+  """
+  # Year:
+  value = searchForFilmTagMatch(u'\u0413\u043E\u0434', 'year', filmContent)
+  if value is None:
+    # Looking for Премьера instead.
+    value = searchForFilmTagMatch(u'\u041F\u0440\u0435\u043C\u044C\u0435\u0440\u0430', 'year', filmContent)
+  if value is None:
+    # Looking for первый_показ.
+    value = searchForFilmTagMatch(u'\u043F\u0435\u0440\u0432\u044B\u0439_\u043F\u043E\u043A\u0430\u0437', 'year', filmContent)
+  if value is not None:
+    match = MATCHER_SANITIZED_YEAR.search(value)
+    if match:
+      return match.groups()[0] # Year is set below.
+  return None
 
 
 def parseInt(string):
