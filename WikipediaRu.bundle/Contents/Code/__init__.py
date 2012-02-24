@@ -9,7 +9,7 @@ WIKIRU_IS_DEBUG = True
 
 # Current log level.
 # Supported values are: 0 = none, 1 = error, 2 = warning, 3 = info, 4 = fine, 5 = finest.
-wikiRuLogLevel = 5 # Default is error.
+wikiRuLogLevel = 1 # Default is error.
 
 
 ##############  Preference item names.
@@ -466,7 +466,7 @@ class PlexMovieAgent(Agent.Movies):
           score += 1
 
         # Genre: "<br/> or ,"-separated values after "| Жанр = ".
-        genres = searchForFilmTagMatch(u'\u0416\u0430\u043D\u0440', 'genres', filmContent, isMultiLine = True)
+        genres = searchForFilmTagMatch(u'\u0416\u0430\u043D\u0440', 'genres', filmContent, isMultiLine = True, treatSlashAsBreak=True)
         if genres is not None and len(genres) > 0:
           score += 1
           if metadata is not None:
@@ -500,7 +500,7 @@ class PlexMovieAgent(Agent.Movies):
             parseActorsInfo(roles, metadata, sanitizedText, isGetAllActors)
 
         # Country: "<br/> or ,"-separated values after "| Страна = ".
-        countries = searchForFilmTagMatch(u'\u0421\u0442\u0440\u0430\u043D\u0430', 'countries', filmContent, isMultiLine = True)
+        countries = searchForFilmTagMatch(u'\u0421\u0442\u0440\u0430\u043D\u0430', 'countries', filmContent, isMultiLine = True, treatSlashAsBreak=True)
         if countries is not None and len(countries) > 0:
           score += 1
           if metadata is not None:
@@ -700,20 +700,24 @@ def safeEncode(s, encoding='utf-8'):
     return str(s).decode(encoding)
 
 
-def parseFilmLineItems(line):
+def parseFilmLineItems(line, treatSlashAsBreak=False):
   items = []
-  matcher = re.compile('\<br\s*/?\>')
+  matcher = re.compile('\<br\s*/?\>', re.I | re.U)
   if matcher.search(line):
     line = line.replace(',', '') # When <br/> tags are there, commas are just removed.
     line = matcher.sub(',', line)
   for item in line.split(','):
     item = item.strip(' \t\n\r\f\v"«»')
     if len(item) > 0:
-      items.append(string.capwords(item))
+      if treatSlashAsBreak:
+        for subItem in item.split('/'):
+          items.append(string.capwords(subItem))
+      else:
+        items.append(string.capwords(item))
   return items
 
 
-def searchForFilmTagMatch(name, key, text, dict=None, isMultiLine=False):
+def searchForFilmTagMatch(name, key, text, dict=None, isMultiLine=False, treatSlashAsBreak=False):
   """ Searches for a match given a compiled matcher and text.
       Parsed group 1 is returned if it's not blank; otherwise None is returned.
       If dict is present, the value will be placed there for the provided key.
@@ -724,7 +728,7 @@ def searchForFilmTagMatch(name, key, text, dict=None, isMultiLine=False):
     value = match.groups(1)[0].strip('|\t\n\r\f\v')
     if not isBlank(value):
       if isMultiLine:
-        values = parseFilmLineItems(value)
+        values = parseFilmLineItems(value, treatSlashAsBreak)
         sendToFineLog('  ... %s: [%s]' % (key, ', '.join(values)))
         return values
       else:
