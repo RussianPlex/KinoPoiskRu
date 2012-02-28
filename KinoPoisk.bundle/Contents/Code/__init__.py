@@ -107,11 +107,11 @@ class PlexMovieAgent(Agent.Movies):
               # Parse kinopoisk movie title id, title and year.
               match = re.search('\/film\/(.+?)\/', anchorFilmElem[0])
               if match:
-                titleId = match.groups(1)[0]
+                kinoPoiskId = match.groups(1)[0]
                 title = divInfoElem.xpath('.//a[contains(@href,"/level/1/film/")]/text()')[0]
                 year = divInfoElem.xpath('.//span[@class="year"]/text()')[0]
                 score = self.computeTitleScore(mediaName, mediaYear, title, year, itemIndex)
-                results.Append(MetadataSearchResult(id=titleId, name=title, year=year, lang=lang, score=score))
+                results.Append(MetadataSearchResult(id=kinoPoiskId, name=title, year=year, lang=lang, score=score))
               else:
                 sendToErrorLog('unable to parse movie title id')
             else:
@@ -121,13 +121,14 @@ class PlexMovieAgent(Agent.Movies):
           itemIndex += 1
       else:
         sendToWarnLog('nothing was found on kinopoisk for media name "%s"' % mediaName)
+        # TODO(zhenya): investigate whether we need this clause at all (haven't seen this happening).
         # Если не нашли там текст названия, значит сайт сразу дал нам страницу с фильмом (хочется верить =)
         try:
           title = page.xpath('//h1[@class="moviename-big"]/text()')[0].strip()
-          titleId = re.search('\/film\/(.+?)\/', page.xpath('//a[contains(@href,"/level/19/film/")]/attribute::href')[0]).groups(1)[0]
+          kinoPoiskId = re.search('\/film\/(.+?)\/', page.xpath('//a[contains(@href,"/level/19/film/")]/attribute::href')[0]).groups(1)[0]
           year = page.xpath('//a[contains(@href,"year")]/text()')[0].strip()
           score = self.computeTitleScore(mediaName, mediaYear, title, year, itemIndex)
-          results.Append(MetadataSearchResult(id=titleId, name=title, year=year, lang=lang, score=score))
+          results.Append(MetadataSearchResult(id=kinoPoiskId, name=title, year=year, lang=lang, score=score))
         except:
           sendToErrorLog(getExceptionInfo('failed to parse a KinoPoisk page'))
     else:
@@ -166,52 +167,236 @@ class PlexMovieAgent(Agent.Movies):
       raise Exception('ERROR: KinoPoisk movie title id is required!')
     sendToFineLog('parsed KinoPoisk movie title id: "%s"' % kinoPoiskId)
 
-    page =  self.XMLElementFromURLWithRetries(KINOPOISK_TITLE_PAGE_URL % kinoPoiskId)
-    if page:
+    self.updateMediaItem(metadata, kinoPoiskId)
+    sendToInfoLog('UPDATE END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
+
+
+  def updateMediaItem(self, metadata, kinoPoiskId):
+    titlePage =  self.XMLElementFromURLWithRetries(KINOPOISK_TITLE_PAGE_URL % kinoPoiskId)
+    if titlePage:
       sendToFineLog('got a KinoPoisk page for movie title id: "%s"' % kinoPoiskId)
       try:
-        updateMediaItem(page, metadata)
+        parseTitleInfo(titlePage, metadata)                            # Title. Название на русском языке.
+        parseOriginalTitleInfo(titlePage, metadata)                    # Original title. Название на оригинальном языке.
+        parseActorsInfo(titlePage, metadata)                           # Actors. Актёры.
+        parseSummaryInfo(titlePage, metadata)                          # Summary. Описание.
+        parseRatingInfo(titlePage, metadata, kinoPoiskId)              # Rating. Рейтинг.
+
+        parseInfoTableTagAndUpdateMetadata(titlePage, metadata)
+
+        studioPage = self.XMLElementFromURLWithRetries(KINOPOISK_STUDIO % kinoPoiskId)
+        parseStudioInfo(studioPage, metadata)                          # Studio. Студия.
+        peoplePage = self.XMLElementFromURLWithRetries(KINOPOISK_PEOPLE % kinoPoiskId)
+        parsePeoplePageInfo(peoplePage, metadata)                      # Studio. Студия.
+
       except:
         sendToErrorLog(getExceptionInfo('failed to update metadata for id %s' % kinoPoiskId))
 
 
+def parseInfoTableTagAndUpdateMetadata(page, metadata):
+  """ Parses the main info <table> tag, which we find by
+      a css classname "info".
+  """
+  mainInfoTagRows = page.xpath('//table[@class="info"]/tr')
+  sendToFineLog('parsed %d rows from the main info table tag' % len(mainInfoTagRows))
+  for infoRowElem in mainInfoTagRows:
+    headerTypeElem =  infoRowElem.xpath('./td[@class="type"]/text()')
+    if len(headerTypeElem) != 1:
+      continue
+    rowTypeKey = headerTypeElem[0]
+    if rowTypeKey == u'режиссер':
+      parseDirectorsInfo(infoRowElem, metadata)             # Director. Режиссер.
+    elif rowTypeKey == u'год':
+      parseYearInfo(infoRowElem, metadata)                  # Year. Год.
+    elif rowTypeKey == u'сценарий':
+      parseWritersInfo(infoRowElem, metadata)               # Writers. Сценаристы.
+    elif rowTypeKey == u'жанр':
+      parseGenresInfo(infoRowElem, metadata)                # Genre. Жанры.
+    elif rowTypeKey == u'слоган':
+      parseTaglineInfo(infoRowElem, metadata)               # Tagline. Слоган.
+    elif rowTypeKey == u'рейтинг MPAA':
+      parseContentRatingInfo(infoRowElem, metadata)         # Content rating. Рейтинг MPAA.
+    elif rowTypeKey == u'время':
+      parseDurationInfo(infoRowElem, metadata)              # Duration. Время.
+    elif rowTypeKey == u'премьера (мир)':
+      parseOriginallyAvailableInfo(infoRowElem, metadata)   # Originally available. Премьера в мире.
+    elif rowTypeKey == u'продюсер' or \
+         rowTypeKey == u'страна' or \
+         rowTypeKey == u'оператор' or \
+         rowTypeKey == u'композитор' or \
+         rowTypeKey == u'художник' or \
+         rowTypeKey == u'монтаж' or \
+         rowTypeKey == u'бюджет' or \
+         rowTypeKey == u'сборы в США' or \
+         rowTypeKey == u'монтаж':
+      # These tags are not supported yet.
+      # TODO(zhenya): add some of these to the summary.
+      sendToFinestLog('skipping an unsupported row: %s' % rowTypeKey)
+      pass
+    else:
+      sendToWarnLog('UNRECOGNIZED row type: %s' % rowTypeKey)
 
-        # Рейтинг MPAA defaults
-#        if (metadata.content_rating) == 'None':
-#          metadata.content_rating = DEFAULT_MPAA
-#        # Рейтинг MPAA age
-#        try:
-#          metadata.content_rating_age = MPAA_AGE[metadata.content_rating]
-#        except:
-#          pass
 
-    # Рейтинг
-#        info_buf = page.xpath('//form[@class="rating_stars"]/div[@id="block_rating"]//a[@href="/level/83/film/'+titleId+'/"]/span/text()')
-#        if len(info_buf):
-#          try:
-#            metadata.rating = float(info_buf[0])
-#          except:
-#            pass
-
-    # Описание
-#        info_buf = page.xpath('//div[@class="block_left_padtop"]/table/tr/td/table/tr/td/span[@class="_reachbanner_"]/div/text()')
-#        if len(info_buf):
-#          info_buf = ' '.join(info_buf)
-#          info_buf = sanitizeString(info_buf)
-#          metadata.summary = info_buf.strip()
+def parseTitleInfo(page, metadata):
+  title = page.xpath('//h1[@class="moviename-big"]/text()')[0].strip()
+  if len(title):
+    title = title.strip('- ')
+    sendToFineLog(' ... parsed title: "%s"' % title)
+    metadata.title = title
 
 
-    # Студия
-#      page = self.XMLElementFromURLWithRetries(KINOPOISK_STUDIO % id)
-#      if page:
-#        info_buf = page.xpath(u'//table/tr/td[b="Производство:"]/../following-sibling::tr/td/a/text()')
-#        if len(info_buf):
-#          # Берем только первую студию
-#          metadata.studio = info_buf[0].strip()
+def parseOriginalTitleInfo(page, metadata):
+  origTitle = page.xpath('//span[@style="color: #666; font-size: 13px"]/text()')
+  if len(origTitle):
+    origTitle = ' '.join(origTitle)
+    origTitle = sanitizeString(origTitle).strip('- ')
+    sendToFineLog(' ... parsed original title: "%s"' % origTitle)
+    metadata.original_title = origTitle
 
-    #Люди разные
-      # page =  self.XMLElementFromURLWithRetries(KINOPOISK_PEOPLE % id)
-      # if page:
+
+def parseActorsInfo(page, metadata):
+  actors = page.xpath('//td[@class="actor_list"]/div/span')
+  sendToFineLog(' ... parsed %d actor tags' % len(actors))
+  metadata.roles.clear()
+  for actorSpanTag in actors:
+    actorList = actorSpanTag.xpath('./a[contains(@href,"/level/4/people/")]/text()')
+    if len(actorList):
+      for actor in actorList:
+        if actor != u'...':
+          sendToFineLog(' . . . . actor: "%s"' % actor)
+          role = metadata.roles.new()
+          role.actor = actor
+
+
+def parseSummaryInfo(page, metadata):
+  summaryParts = page.xpath('//div[@class="block_left_padtop"]/table/tr/td/table/tr/td/span[@class="_reachbanner_"]/div/text()')
+  if len(summaryParts):
+    summary = ' '.join(summaryParts)
+    summary = sanitizeString(summary).strip()
+    sendToFineLog(' ... parsed summary: "%s..."' % summary[:30])
+    metadata.summary = summary
+
+
+def parseRatingInfo(page, metadata, kinoPoiskId):
+  ratingText = page.xpath('//form[@class="rating_stars"]/div[@id="block_rating"]//a[@href="/level/83/film/' + kinoPoiskId + '/"]/span/text()')
+  if len(ratingText):
+    try:
+      rating = float(ratingText[0])
+      sendToFineLog(' ... parsed rating "%s"' % str(rating))
+      metadata.rating = rating
+    except:
+      sendToErrorLog(getExceptionInfo('unable to parse rating'))
+
+
+def parseStudioInfo(page, metadata):
+  if page:
+    studios = page.xpath(u'//table/tr/td[b="Производство:"]/../following-sibling::tr/td/a/text()')
+    if len(studios):
+      # Берем только первую студию.
+      studio = studios[0].strip()
+      sendToFineLog(' ... parsed studio: %s' % studio)
+      metadata.studio = studio
+
+
+def parseDirectorsInfo(infoRowElem, metadata):
+  directors = infoRowElem.xpath('.//a/text()')
+  sendToFineLog(' ... parsed %d director tags' % len(directors))
+  if len(directors):
+    metadata.directors.clear()
+    for director in directors:
+      if director != u'...':
+        sendToFineLog(' . . . . director: "%s"' % director)
+        metadata.directors.add(director)
+
+
+def parseYearInfo(infoRowElem, metadata):
+  yearText = infoRowElem.xpath('.//a/text()')
+  if len(yearText):
+    sendToFineLog(' ... parsed year: %s' % yearText[0])
+    try:
+      metadata.year = int(yearText[0])
+    except:
+      sendToErrorLog(getExceptionInfo('unable to parse year'))
+
+
+def parseWritersInfo(infoRowElem, metadata):
+  writers = infoRowElem.xpath('.//a/text()')
+  sendToFineLog(' ... parsed %d writer tags' % len(writers))
+  if len(writers):
+    metadata.writers.clear()
+    for writer in writers:
+      if writer != u'...':
+        sendToFineLog(' . . . . writer "%s"' % writer)
+        metadata.writers.add(writer)
+
+
+def parseGenresInfo(infoRowElem, metadata):
+  genres = infoRowElem.xpath('.//a/text()')
+  sendToFineLog(' ... parsed %d genre tags' % len(genres))
+  if len(genres):
+    metadata.genres.clear()
+    for genre in genres:
+      if genre != u'...':
+        genre = genre.capitalize()
+        sendToFineLog(' . . . . genre: "%s"' % genre)
+        metadata.genres.add(genre)
+
+
+def parseTaglineInfo(infoRowElem, metadata):
+  taglineParts = infoRowElem.xpath('./td[@style]/text()')
+  if len(taglineParts):
+    tagline = ' '.join(taglineParts)
+    tagline = sanitizeString(tagline)
+    tagline = tagline.strip('- ')
+    sendToFineLog(' ... parsed tagline: "%s"' % tagline[:20])
+    metadata.tagline = tagline
+
+
+def parseContentRatingInfo(infoRowElem, metadata):
+  metadata.content_rating = None
+  contentRatingElems = infoRowElem.xpath('.//a/img/attribute::src')
+  if len(contentRatingElems) == 1:
+    match = re.search('\/([^/.]+?)\.gif$',contentRatingElems[0])
+    if match:
+      contentRating = match.groups(1)[0]
+      sendToFineLog(' ... parsed content rating: "%s"' % str(contentRating))
+      metadata.content_rating = contentRating
+
+
+def parseDurationInfo(infoRowElem, metadata):
+  durationElems = infoRowElem.xpath('./td[@class="time"]/text()')
+  if len(durationElems) == 1:
+    try:
+      duration = int(durationElems[0].rstrip(u' мин.')) * 60 * 1000
+      sendToFineLog(' ... parsed duration: "%s"' % str(duration))
+      metadata.duration = duration
+    except:
+      sendToErrorLog(getExceptionInfo('unable to parse duration'))
+
+
+def parseOriginallyAvailableInfo(infoRowElem, metadata):
+  originalDateElems = infoRowElem.xpath('.//a/text()')
+  if len(originalDateElems):
+    try:
+      (dd, mm, yy) = originalDateElems[0].split()
+      if len(dd) == 1:
+        dd = '0' + dd
+      mm = RU_MONTH[mm]
+      originalDate = Datetime.ParseDate(yy+'-'+mm+'-'+dd).date()
+      sendToFineLog(' ... parsed originally available date: "%s"' % str(originalDate))
+      metadata.originally_available_at = originalDate
+    except:
+      sendToErrorLog(getExceptionInfo('unable to parse originally available date'))
+
+
+def parsePeoplePageInfo(page, metadata):
+  """ Parses people - mostly actors, but here (on this page)
+      we have access to extensive information about all who participated
+      creating this movie.
+  """
+  if not page:
+    return
+  # TODO(zhenya): uncomment and fix.
         # people_type = None
         # peoples = page.xpath('//div[@id="content_block"]/table/tr/td/div[@class="block_left"]/*')
         # for info_buf in peoples:
@@ -262,178 +447,6 @@ class PlexMovieAgent(Agent.Movies):
 
           # except:
             # pass
-
-    sendToInfoLog('UPDATE END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
-
-
-def updateMediaItem(page, metadata):
-  # Reset MPAA rating. Сброс рейтинга MPAA.
-  metadata.content_rating = None
-
-  # Actors. Актёры.
-  actors = page.xpath('//td[@class="actor_list"]/div/span')
-  sendToFineLog(' ... parsed %d actor tags' % len(actors))
-  metadata.roles.clear()
-  for actorSpanTag in actors:
-    actorList = actorSpanTag.xpath('./a[contains(@href,"/level/4/people/")]/text()')
-    if len(actorList):
-      for actor in actorList:
-        if actor != u'...':
-          sendToFineLog(' . . . . actor "%s"' % actor)
-          role = metadata.roles.new()
-          role.actor = actor
-
-  # Title. Название на русском языке.
-  title = page.xpath('//h1[@class="moviename-big"]/text()')[0].strip()
-  if len(title):
-    title = title.strip('- ')
-    sendToFineLog(' ... parsed title "%s"' % title)
-    metadata.title = title
-
-  # Original title. Название на оригинальном языке.
-  origTitle = page.xpath('//span[@style="color: #666; font-size: 13px"]/text()')
-  if len(origTitle):
-    origTitle = ' '.join(origTitle)
-    origTitle = sanitizeString(origTitle).strip('- ')
-    sendToFineLog(' ... parsed original title "%s"' % origTitle)
-    metadata.original_title = origTitle
-
-  parseInfoTableTagAndUpdateMetadata(page, metadata)
-
-
-def parseInfoTableTagAndUpdateMetadata(page, metadata):
-  """ Parses the main info <table> tag, which we find by
-      a css classname "info".
-  """
-  mainInfoTagRows = page.xpath('//table[@class="info"]/tr')
-  sendToFineLog('parsed %d rows from the main info table tag' % len(mainInfoTagRows))
-  for infoRowElem in mainInfoTagRows:
-    headerTypeElem =  infoRowElem.xpath('./td[@class="type"]/text()')
-    if len(headerTypeElem) != 1:
-      continue
-    rowTypeKey = headerTypeElem[0]
-    if rowTypeKey == u'режиссер':
-      parseDirectorsInfo(infoRowElem, metadata)             # Director. Режиссер.
-    elif rowTypeKey == u'год':
-      parseYearInfo(infoRowElem, metadata)                  # Year. Год.
-    elif rowTypeKey == u'сценарий':
-      parseWritersInfo(infoRowElem, metadata)               # Writers. Сценаристы.
-    elif rowTypeKey == u'жанр':
-      parseGenresInfo(infoRowElem, metadata)                # Genre. Жанры.
-    elif rowTypeKey == u'слоган':
-      parseTaglineInfo(infoRowElem, metadata)               # Tagline. Слоган.
-    elif rowTypeKey == u'рейтинг MPAA':
-      parseContentRatingInfo(infoRowElem, metadata)         # Content rating. Рейтинг MPAA.
-    elif rowTypeKey == u'время':
-      parseDurationInfo(infoRowElem, metadata)              # Duration. Время.
-    elif rowTypeKey == u'премьера (мир)':
-      parseOriginallyAvailableInfo(infoRowElem, metadata)   # Originally available. Премьера в мире.
-    elif rowTypeKey == u'продюсер' or \
-         rowTypeKey == u'страна' or \
-         rowTypeKey == u'оператор' or \
-         rowTypeKey == u'композитор' or \
-         rowTypeKey == u'художник' or \
-         rowTypeKey == u'монтаж' or \
-         rowTypeKey == u'бюджет' or \
-         rowTypeKey == u'сборы в США' or \
-         rowTypeKey == u'монтаж':
-      # These tags are not supported yet.
-      # TODO(zhenya): add some of these to the summary.
-      sendToFinestLog('skipping an unsupported row: %s' % rowTypeKey)
-      pass
-    else:
-      sendToWarnLog('UNRECOGNIZED row type: %s' % rowTypeKey)
-
-
-def parseDirectorsInfo(infoRowElem, metadata):
-  directors = infoRowElem.xpath('.//a/text()')
-  sendToFineLog(' ... parsed %d director tags' % len(directors))
-  if len(directors):
-    metadata.directors.clear()
-    for director in directors:
-      if director != u'...':
-        sendToFineLog(' . . . . director "%s"' % director)
-        metadata.directors.add(director)
-
-
-def parseYearInfo(infoRowElem, metadata):
-  yearText = infoRowElem.xpath('.//a/text()')
-  if len(yearText):
-    sendToFineLog(' ... parsed year %s' % yearText[0])
-    try:
-      metadata.year = int(yearText[0])
-    except:
-      sendToErrorLog(getExceptionInfo('unable to parse year'))
-
-
-def parseWritersInfo(infoRowElem, metadata):
-  writers = infoRowElem.xpath('.//a/text()')
-  sendToFineLog(' ... parsed %d writer tags' % len(writers))
-  if len(writers):
-    metadata.writers.clear()
-    for writer in writers:
-      if writer != u'...':
-        sendToFineLog(' . . . . writer "%s"' % writer)
-        metadata.writers.add(writer)
-
-
-def parseGenresInfo(infoRowElem, metadata):
-  genres = infoRowElem.xpath('.//a/text()')
-  sendToFineLog(' ... parsed %d genre tags' % len(genres))
-  if len(genres):
-    metadata.genres.clear()
-    for genre in genres:
-      if genre != u'...':
-        genre = genre.capitalize()
-        sendToFineLog(' . . . . genre "%s"' % genre)
-        metadata.genres.add(genre)
-
-
-def parseTaglineInfo(infoRowElem, metadata):
-  taglineParts = infoRowElem.xpath('./td[@style]/text()')
-  if len(taglineParts):
-    tagline = ' '.join(taglineParts)
-    tagline = sanitizeString(tagline)
-    tagline = tagline.strip('- ')
-    sendToFineLog(' ... parsed tagline: "%s"' % tagline[:20])
-    metadata.tagline = tagline
-
-
-def parseContentRatingInfo(infoRowElem, metadata):
-  contentRatingElems = infoRowElem.xpath('.//a/img/attribute::src')
-  if len(contentRatingElems) == 1:
-    match = re.search('\/([^/.]+?)\.gif$',contentRatingElems[0])
-    if match:
-      contentRating = match.groups(1)[0]
-      sendToFineLog(' ... parsed content rating: "%s"' % str(contentRating))
-      metadata.content_rating = contentRating
-
-
-def parseDurationInfo(infoRowElem, metadata):
-  durationElems = infoRowElem.xpath('./td[@class="time"]/text()')
-  if len(durationElems) == 1:
-    try:
-      duration = int(durationElems[0].rstrip(u' мин.')) * 60 * 1000
-      sendToFineLog(' ... parsed duration: "%s"' % str(duration))
-      metadata.duration = duration
-    except:
-      sendToErrorLog(getExceptionInfo('unable to parse duration'))
-
-
-def parseOriginallyAvailableInfo(infoRowElem, metadata):
-  originalDateElems = infoRowElem.xpath('.//a/text()')
-  if len(originalDateElems):
-    try:
-      (dd, mm, yy) = originalDateElems[0].split()
-      if len(dd) == 1:
-        dd = '0' + dd
-      mm = RU_MONTH[mm]
-      originalDate = Datetime.ParseDate(yy+'-'+mm+'-'+dd).date()
-      sendToFineLog(' ... parsed originally available date: "%s"' % str(originalDate))
-      metadata.originally_available_at = originalDate
-    except:
-      sendToErrorLog(getExceptionInfo('unable to parse originally available date'))
-
 
 def sanitizeString(msg):
   """ Функция для замены специальных символов.
