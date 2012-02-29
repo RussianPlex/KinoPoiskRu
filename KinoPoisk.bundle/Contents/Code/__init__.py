@@ -9,7 +9,7 @@ kinoPoiskLogLevel = 5 # Default is error.
 
 KINOPOISK_PAGE_ENCODING = 'cp1251'
 
-# Разные страницы сайта
+# Разные страницы сайта.
 KINOPOISK_BASE = 'http://www.kinopoisk.ru/'
 KINOPOISK_TITLE_PAGE_URL = KINOPOISK_BASE + 'level/1/film/%s/'
 KINOPOISK_PEOPLE = KINOPOISK_BASE + 'level/19/film/%s/'
@@ -17,62 +17,37 @@ KINOPOISK_STUDIO = KINOPOISK_BASE + 'level/91/film/%s/'
 KINOPOISK_POSTERS = KINOPOISK_BASE + 'level/17/film/%s/page/%d/'
 KINOPOISK_ART = KINOPOISK_BASE + 'level/13/film/%s/page/%d/'
 
-# Страница поиска
+# Страница поиска.
 KINOPOISK_SEARCH = 'http://www.kinopoisk.ru/index.php?first=no&kp_query=%s'
 
 SCORE_PENALTY_ITEM_ORDER = 3
 SCORE_PENALTY_YEAR_WRONG = 4
 
-# Рейтинги
+# Рейтинги.
 DEFAULT_MPAA = u'R'
 MPAA_AGE = {u'G': 0, u'PG': 11, u'PG-13': 13, u'R': 16, u'NC-17': 17}
 
-# Русские месяца, пригодится для определения дат
+# Русские месяца, пригодится для определения дат.
 RU_MONTH = {u'января': '01', u'февраля': '02', u'марта': '03', u'апреля': '04', u'мая': '05', u'июня': '06', u'июля': '07', u'августа': '08', u'сентября': '09', u'октября': '10', u'ноября': '11', u'декабря': '12'}
 
-# Под кого маскируемся =)
+# Под кого маскируемся =).
 UserAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_2) AppleWebKit/534.51.22 (KHTML, like Gecko) Version/5.1.1 Safari/534.51.22'
+
+# TODO(zhenya): load these from user preferences.
+MAX_POSTERS = 3
+MAX_BACKGROUND_ART = 4
+CACHE_TIME = CACHE_1DAY
 
 
 def Start():
-  print '+++++++++++++++++++++++++++++++++ START'
-  HTTP.CacheTime = CACHE_1DAY
+  sendToInfoLog('***** START ***** %s' % USER_AGENT)
+  # Setting cache experation time.
+  HTTP.CacheTime = CACHE_TIME
 
 class PlexMovieAgent(Agent.Movies):
-  print '+++++++++++++++++++++++++++++++++ CTOR'
   name = 'KinoPoiskRu'
   languages = [Locale.Language.Russian]
   accepts_from = ['com.plexapp.agents.localmedia']
-
-  # Функция для получения html-содержимого
-  def httpRequest(self, url):
-    time.sleep(1)
-    res = None
-    for i in range(3):
-      try:
-        res = HTTP.Request(url, headers = {'User-agent': UserAgent, 'Accept': 'text/html'})
-      except:
-        Log("Error hitting HTTP url:", url)
-        time.sleep(1)
-    return res
-
-  # Функция преобразования html-кода в xml-код
-  def XMLElementFromURLWithRetries(self, url):
-    sendToFinestLog('requesting URL: "%s"...' % url)
-    res = self.httpRequest(url)
-    if res:
-      res = str(res).decode(KINOPOISK_PAGE_ENCODING)
-#      sendToFinestLog(res)
-      return HTML.ElementFromString(res)
-    return None
-
-  def computeTitleScore(self, mediaName, mediaYear, title, year, itemIndex):
-    score = 100
-    # Item order on the list penalizes the score.
-    score = score - (itemIndex * SCORE_PENALTY_ITEM_ORDER)
-    if mediaYear is not None and mediaYear != year:
-      score = score - SCORE_PENALTY_YEAR_WRONG
-    return score
 
   ##############################################################################
   ############################# S E A R C H ####################################
@@ -92,7 +67,7 @@ class PlexMovieAgent(Agent.Movies):
 
     # Получаем страницу поиска
     sendToFinestLog('quering kinopoisk...')
-    page =  self.XMLElementFromURLWithRetries(KINOPOISK_SEARCH % mediaName)
+    page = XMLElementFromURLWithRetries(KINOPOISK_SEARCH % mediaName)
     if page:
       # Если страница получена, берем с нее перечень всех названий фильмов.
       sendToFineLog('got a kinopoisk page to parse...')
@@ -110,7 +85,7 @@ class PlexMovieAgent(Agent.Movies):
                 kinoPoiskId = match.groups(1)[0]
                 title = divInfoElem.xpath('.//a[contains(@href,"/level/1/film/")]/text()')[0]
                 year = divInfoElem.xpath('.//span[@class="year"]/text()')[0]
-                score = self.computeTitleScore(mediaName, mediaYear, title, year, itemIndex)
+                score = computeTitleScore(mediaName, mediaYear, title, year, itemIndex)
                 results.Append(MetadataSearchResult(id=kinoPoiskId, name=title, year=year, lang=lang, score=score))
               else:
                 sendToErrorLog('unable to parse movie title id')
@@ -127,7 +102,7 @@ class PlexMovieAgent(Agent.Movies):
           title = page.xpath('//h1[@class="moviename-big"]/text()')[0].strip()
           kinoPoiskId = re.search('\/film\/(.+?)\/', page.xpath('//a[contains(@href,"/level/19/film/")]/attribute::href')[0]).groups(1)[0]
           year = page.xpath('//a[contains(@href,"year")]/text()')[0].strip()
-          score = self.computeTitleScore(mediaName, mediaYear, title, year, itemIndex)
+          score = computeTitleScore(mediaName, mediaYear, title, year, itemIndex)
           results.Append(MetadataSearchResult(id=kinoPoiskId, name=title, year=year, lang=lang, score=score))
         except:
           sendToErrorLog(getExceptionInfo('failed to parse a KinoPoisk page'))
@@ -172,23 +147,25 @@ class PlexMovieAgent(Agent.Movies):
 
 
   def updateMediaItem(self, metadata, kinoPoiskId):
-    titlePage =  self.XMLElementFromURLWithRetries(KINOPOISK_TITLE_PAGE_URL % kinoPoiskId)
+    titlePage =  XMLElementFromURLWithRetries(KINOPOISK_TITLE_PAGE_URL % kinoPoiskId)
     if titlePage:
       sendToFineLog('got a KinoPoisk page for movie title id: "%s"' % kinoPoiskId)
       try:
         parseTitleInfo(titlePage, metadata)                            # Title. Название на русском языке.
         parseOriginalTitleInfo(titlePage, metadata)                    # Original title. Название на оригинальном языке.
-        parseActorsInfo(titlePage, metadata)                           # Actors. Актёры.
         parseSummaryInfo(titlePage, metadata)                          # Summary. Описание.
         parseRatingInfo(titlePage, metadata, kinoPoiskId)              # Rating. Рейтинг.
 
         parseInfoTableTagAndUpdateMetadata(titlePage, metadata)
 
-        studioPage = self.XMLElementFromURLWithRetries(KINOPOISK_STUDIO % kinoPoiskId)
-        parseStudioInfo(studioPage, metadata)                          # Studio. Студия.
-        peoplePage = self.XMLElementFromURLWithRetries(KINOPOISK_PEOPLE % kinoPoiskId)
-        parsePeoplePageInfo(peoplePage, metadata)                      # Studio. Студия.
+        parseStudioInfo(metadata, kinoPoiskId)                         # Studio. Студия.
 
+        # TODO(zhenya): add the two together.
+        parseActorsInfo(titlePage, metadata)                           # Actors. Актёры.
+        parsePeoplePageInfo(metadata, kinoPoiskId)                     # People. Студия.
+
+        parsePostersInfo(metadata, kinoPoiskId)                        # Posters. Постеры.
+        parseBackgroundArtInfo(metadata, kinoPoiskId)                  # Background art. Задники.
       except:
         sendToErrorLog(getExceptionInfo('failed to update metadata for id %s' % kinoPoiskId))
 
@@ -228,6 +205,9 @@ def parseInfoTableTagAndUpdateMetadata(page, metadata):
          rowTypeKey == u'монтаж' or \
          rowTypeKey == u'бюджет' or \
          rowTypeKey == u'сборы в США' or \
+         rowTypeKey == u'директор фильма' or \
+         rowTypeKey == u'релиз на DVD' or \
+         rowTypeKey == u'зрители' or \
          rowTypeKey == u'монтаж':
       # These tags are not supported yet.
       # TODO(zhenya): add some of these to the summary.
@@ -288,14 +268,16 @@ def parseRatingInfo(page, metadata, kinoPoiskId):
       sendToErrorLog(getExceptionInfo('unable to parse rating'))
 
 
-def parseStudioInfo(page, metadata):
-  if page:
-    studios = page.xpath(u'//table/tr/td[b="Производство:"]/../following-sibling::tr/td/a/text()')
-    if len(studios):
-      # Берем только первую студию.
-      studio = studios[0].strip()
-      sendToFineLog(' ... parsed studio: %s' % studio)
-      metadata.studio = studio
+def parseStudioInfo(metadata, kinoPoiskId):
+  page = XMLElementFromURLWithRetries(KINOPOISK_STUDIO % kinoPoiskId)
+  if not page:
+    return
+  studios = page.xpath(u'//table/tr/td[b="Производство:"]/../following-sibling::tr/td/a/text()')
+  if len(studios):
+    # Берем только первую студию.
+    studio = studios[0].strip()
+    sendToFineLog(' ... parsed studio: %s' % studio)
+    metadata.studio = studio
 
 
 def parseDirectorsInfo(infoRowElem, metadata):
@@ -389,11 +371,12 @@ def parseOriginallyAvailableInfo(infoRowElem, metadata):
       sendToErrorLog(getExceptionInfo('unable to parse originally available date'))
 
 
-def parsePeoplePageInfo(page, metadata):
+def parsePeoplePageInfo(metadata, kinoPoiskId):
   """ Parses people - mostly actors, but here (on this page)
       we have access to extensive information about all who participated
       creating this movie.
   """
+  page = XMLElementFromURLWithRetries(KINOPOISK_PEOPLE % kinoPoiskId)
   if not page:
     return
   # TODO(zhenya): uncomment and fix.
@@ -447,6 +430,149 @@ def parsePeoplePageInfo(page, metadata):
 
           # except:
             # pass
+
+
+def parsePostersInfo(metadata, kinoPoiskId):
+  # Получение адресов постеров.
+  pages = []
+  page = XMLElementFromURLWithRetries(KINOPOISK_POSTERS % (kinoPoiskId, 1))
+  if page:
+    pages.append(page)
+    nav = page.xpath('//div[@class="navigator"]/ul/li[@class="arr"]/a')
+    if nav:
+      nav = nav[-1].xpath('./attribute::href')[0]
+      nav = re.search('page\/(\d+?)\/$', nav)
+      try:
+        for p_i in range(2, int(nav.groups(1)[0]) + 1):
+          page =  XMLElementFromURLWithRetries(KINOPOISK_POSTERS % (kinoPoiskId, p_i))
+          if page:
+            pages.append(page)
+      except:
+        sendToErrorLog(getExceptionInfo('unable to parse posters page (1)'))
+
+  # Получение URL постеров.
+  totalFetched = 0
+  if len(pages):
+    for page in pages:
+      info_buf = page.xpath('//table[@class="fotos" or @class="fotos fotos1" or @class="fotos fotos2"]/tr/td/a/attribute::href')
+      for imageUrl in info_buf:
+        # Получаем страницу с картинкою.
+        page = XMLElementFromURLWithRetries(KINOPOISK_BASE + imageUrl.lstrip('/'))
+        imageUrl = page.xpath('//table[@id="main_table"]/tr/td/a/img/attribute::src')
+        if not len(imageUrl):
+            imageUrl = page.xpath('//table[@id="main_table"]/tr/td/img/attribute::src')
+        if len(imageUrl) == 1:
+          imageUrl = imageUrl[0]
+          name = imageUrl.split('/')[-1]
+          if name not in metadata.posters:
+            try:
+              imgResource = Proxy.Media(HTTP.Request(imageUrl), sort_order = 1)
+              sendToFineLog(' ... parsed a poster (1): "%s" from URL "%s"' % (str(name), str(imageUrl)))
+              metadata.posters[name] = imgResource
+              totalFetched += 1
+              if totalFetched >= MAX_POSTERS:
+                return
+            except:
+              sendToErrorLog(getExceptionInfo('unable to parse posters page (2)'))
+  else:
+    sendToFineLog(' ... determined NO poster addresses')
+
+  # If nothing is found, let's grab at least a small thumb.
+  # На всякий случай забираем картинку низкого качества.
+  if totalFetched >= 2:
+    return
+  try:
+    sendToFinestLog(' ... got too few posters, also getting a thumb')
+    imageUrl = 'http://st.kinopoisk.ru/images/film/' + kinoPoiskId + '.jpg'
+    name = imageUrl.split('/')[-1]
+    sendToFineLog(' ... parsed a poster (2): "%s" from URL "%s"' % (str(name), str(imageUrl)))
+    metadata.posters[name] = Proxy.Media(HTTP.Request(imageUrl), sort_order = 1)
+  except:
+    sendToErrorLog(getExceptionInfo('unable to parse posters page (3)'))
+
+
+def parseBackgroundArtInfo(metadata, kinoPoiskId):
+  # Получение адресов задников
+  pages = []
+  page = XMLElementFromURLWithRetries(KINOPOISK_ART % (kinoPoiskId, 1))
+  if page:
+    pages.append(page)
+    nav = page.xpath('//div[@class="navigator"]/ul/li[@class="arr"]/a')
+    if nav:
+      nav = nav[-1].xpath('./attribute::href')[0]
+      nav = re.search('page\/(\d+?)\/$', nav)
+      try:
+        for p_i in range(2, int(nav.groups(1)[0]) + 1):
+          page =  XMLElementFromURLWithRetries(KINOPOISK_ART % (kinoPoiskId, p_i))
+          if page:
+            pages.append(page)
+      except:
+        sendToErrorLog(getExceptionInfo('unable to parse background art page (1)'))
+
+  # Получение урлов задников.
+  totalFetched = 0
+  if len(pages):
+    for page in pages:
+      info_buf = page.xpath('//table[@class="fotos" or @class="fotos fotos1" or @class="fotos fotos2"]/tr/td/a/attribute::href')
+      for imageUrl in info_buf:
+        # Получаем страницу с картинкою.
+        page = XMLElementFromURLWithRetries(KINOPOISK_BASE + imageUrl.lstrip('/'))
+        imageUrl = page.xpath('//table[@id="main_table"]/tr/td/a/img/attribute::src')
+        if not len(imageUrl):
+            imageUrl = page.xpath('//table[@id="main_table"]/tr/td/img/attribute::src')
+        if len(imageUrl) == 1:
+          imageUrl = imageUrl[0]
+          name = imageUrl.split('/')[-1]
+          if name not in metadata.art:
+            try:
+              imgResource = Proxy.Media(HTTP.Request(imageUrl), sort_order = 1)
+              sendToFineLog(' ... parsed a background art: "%s" from URL "%s"' % (str(name), str(imageUrl)))
+              metadata.art[name] = imgResource
+              totalFetched += 1
+              if totalFetched >= MAX_BACKGROUND_ART:
+                return
+            except:
+              sendToErrorLog(getExceptionInfo('unable to parse background art page (2)'))
+  else:
+    sendToFineLog(' ... determined NO background art addresses')
+
+
+def XMLElementFromURLWithRetries(url):
+  """ Fetches a given URL and converts it to XML.
+      Функция преобразования html-кода в xml-код.
+  """
+  sendToFinestLog('requesting URL: "%s"...' % url)
+  res = httpRequest(url)
+  if res:
+    res = str(res).decode(KINOPOISK_PAGE_ENCODING)
+#    sendToFinestLog(res)
+    return HTML.ElementFromString(res)
+  return None
+
+
+def computeTitleScore(mediaName, mediaYear, title, year, itemIndex):
+  # TODO(zhenya): consider title match when scoring.
+  score = 100
+  # Item order on the list penalizes the score.
+  score = score - (itemIndex * SCORE_PENALTY_ITEM_ORDER)
+  if mediaYear is not None and mediaYear != year:
+    score = score - SCORE_PENALTY_YEAR_WRONG
+  return score
+
+
+def httpRequest(url):
+  """ Fetches a content given its URL.
+      Функция для получения html-содержимого.
+  """
+  time.sleep(1)
+  for i in range(3):
+    try:
+      return HTTP.Request(url, headers = {'User-agent': UserAgent, 'Accept': 'text/html'})
+    except:
+      sendToErrorLog(getExceptionInfo('Error fetching URL: "%s".' % url))
+      time.sleep(1)
+  return None
+
 
 def sanitizeString(msg):
   """ Функция для замены специальных символов.
