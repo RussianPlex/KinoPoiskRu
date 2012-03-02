@@ -20,6 +20,10 @@ KINOPOISK_ART = KINOPOISK_BASE + 'level/13/film/%s/page/%d/'
 # Страница поиска.
 KINOPOISK_SEARCH = 'http://www.kinopoisk.ru/index.php?first=no&kp_query=%s'
 
+# Compiled regex matchers.
+MATCHER_MOVIE_DURATION = re.compile('\s*(\d+).*?', re.UNICODE | re.DOTALL)
+
+
 SCORE_PENALTY_ITEM_ORDER = 3
 SCORE_PENALTY_YEAR_WRONG = 4
 
@@ -347,11 +351,13 @@ def parseContentRatingInfo(infoRowElem, metadata):
 
 def parseDurationInfo(infoRowElem, metadata):
   durationElems = infoRowElem.xpath('./td[@class="time"]/text()')
-  if len(durationElems) == 1:
+  if len(durationElems) > 0:
     try:
-      duration = int(durationElems[0].rstrip(u' мин.')) * 60 * 1000
-      sendToFineLog(' ... parsed duration: "%s"' % str(duration))
-      metadata.duration = duration
+      match = MATCHER_MOVIE_DURATION.search(durationElems[0])
+      if match:
+        duration = int(int(match.groups(1)[0])) * 1000
+        sendToFineLog(' ... parsed duration: "%s"' % str(duration))
+        metadata.duration = duration
     except:
       sendToErrorLog(getExceptionInfo('unable to parse duration'))
 
