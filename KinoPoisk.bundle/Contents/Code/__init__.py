@@ -16,6 +16,7 @@ KINOPOISK_PEOPLE = KINOPOISK_BASE + 'level/19/film/%s/'
 KINOPOISK_STUDIO = KINOPOISK_BASE + 'level/91/film/%s/'
 KINOPOISK_POSTERS = KINOPOISK_BASE + 'level/17/film/%s/page/%d/'
 KINOPOISK_ART = KINOPOISK_BASE + 'level/13/film/%s/page/%d/'
+KINOPOISK_MOVIE_THUMBNAIL = 'http://st.kinopoisk.ru/images/film/%s'
 
 # Страница поиска.
 KINOPOISK_SEARCH = 'http://www.kinopoisk.ru/index.php?first=no&kp_query=%s'
@@ -38,8 +39,8 @@ RU_MONTH = {u'января': '01', u'февраля': '02', u'марта': '03',
 UserAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_2) AppleWebKit/534.51.22 (KHTML, like Gecko) Version/5.1.1 Safari/534.51.22'
 
 # TODO(zhenya): load these from user preferences.
-MAX_POSTERS = 3
-MAX_BACKGROUND_ART = 4
+MAX_POSTERS = 5
+MAX_BACKGROUND_ART = 5
 CACHE_TIME = CACHE_1DAY
 
 
@@ -429,11 +430,12 @@ def parsePeoplePageInfo(titlePage, metadata, kinoPoiskId, parseAllActors):
           actorRoleElems = peopleTagElem.xpath('./div/div/div[@class="role"]/text()')
           if len(actorRoleElems):
             roleName = str(actorRoleElems[0]).strip().strip('. ')
-            sendToFineLog(' . . . . parsed actor "%s" with role "%s"' % (personName, roleName))
             if personName in actorsMap:
+              sendToFineLog(' . . . . parsed main actor "%s" with role "%s"' % (personName, roleName))
               mainActors.append((personName, roleName))
               del actorsMap[personName]
             elif parseAllActors:
+              sendToFineLog(' . . . . parsed other actor "%s" with role "%s"' % (personName, roleName))
               otherActors.append((personName, roleName))
       else:
         personType = None
@@ -480,41 +482,48 @@ def parsePostersInfo(metadata, kinoPoiskId):
   totalFetched = 0
   if len(pages):
     for page in pages:
-      info_buf = page.xpath('//table[@class="fotos" or @class="fotos fotos1" or @class="fotos fotos2"]/tr/td/a/attribute::href')
-      for imageUrl in info_buf:
+      imageUrls = page.xpath('//table[@class="fotos" or @class="fotos fotos1" or @class="fotos fotos2"]/tr/td/a/attribute::href')
+      for imageUrl in imageUrls:
+        sendToFineLog(' ... checking image with URL "%s"' % str(imageUrl))
+
         # Получаем страницу с картинкою.
         page = XMLElementFromURLWithRetries(KINOPOISK_BASE + imageUrl.lstrip('/'))
-        imageUrl = page.xpath('//table[@id="main_table"]/tr/td/a/img/attribute::src')
-        if not len(imageUrl):
-            imageUrl = page.xpath('//table[@id="main_table"]/tr/td/img/attribute::src')
-        if len(imageUrl) == 1:
-          imageUrl = imageUrl[0]
+        if not page:
+          continue
+        imageUrlList = page.xpath('//table[@id="main_table"]/tr/td/a/img/attribute::src')
+        if not len(imageUrlList):
+          imageUrlList = page.xpath('//table[@id="main_table"]/*/td/img/attribute::src')
+        if len(imageUrlList):
+          totalFetched += 1
+          imageUrl = ensureAbsoluteUrl(imageUrlList[0])
           name = imageUrl.split('/')[-1]
           if name not in metadata.posters:
             try:
+              sendToFineLog(' ... fetching poster "%s" from URL "%s"' % (str(name), str(imageUrl)))
               imgResource = Proxy.Media(HTTP.Request(imageUrl), sort_order = 1)
-              sendToFineLog(' ... parsed a poster (1): "%s" from URL "%s"' % (str(name), str(imageUrl)))
+              sendToFinestLog(' ... fetching poster SUCCESS')
               metadata.posters[name] = imgResource
-              totalFetched += 1
-              if totalFetched >= MAX_POSTERS:
-                return
             except:
+              totalFetched -= 1
               sendToErrorLog(getExceptionInfo('unable to parse posters page (2)'))
+          if totalFetched >= MAX_POSTERS:
+            return
   else:
     sendToFineLog(' ... determined NO poster addresses')
 
   # If nothing is found, let's grab at least a small thumb.
   # На всякий случай забираем картинку низкого качества.
-  if totalFetched >= 2:
-    return
-  try:
-    sendToFinestLog(' ... got too few posters, also getting a thumb')
-    imageUrl = 'http://st.kinopoisk.ru/images/film/' + kinoPoiskId + '.jpg'
-    name = imageUrl.split('/')[-1]
-    sendToFineLog(' ... parsed a poster (2): "%s" from URL "%s"' % (str(name), str(imageUrl)))
-    metadata.posters[name] = Proxy.Media(HTTP.Request(imageUrl), sort_order = 1)
-  except:
-    sendToErrorLog(getExceptionInfo('unable to parse posters page (3)'))
+  if totalFetched <= 2:
+    try:
+      sendToFinestLog(' ... got too few posters, also getting a thumb')
+      name = kinoPoiskId + '.jpg'
+      imageUrl = KINOPOISK_MOVIE_THUMBNAIL % name
+      if name not in metadata.posters:
+        sendToFineLog(' ... fetching thumbnail "%s" from URL "%s"' % (str(name), str(imageUrl)))
+        metadata.posters[name] = Proxy.Media(HTTP.Request(imageUrl), sort_order = 1)
+        sendToFinestLog(' ... fetching thumbnail SUCCESS')
+    except:
+      sendToErrorLog(getExceptionInfo('unable to parse posters page (3)'))
 
 
 def parseBackgroundArtInfo(metadata, kinoPoiskId):
@@ -539,26 +548,30 @@ def parseBackgroundArtInfo(metadata, kinoPoiskId):
   totalFetched = 0
   if len(pages):
     for page in pages:
-      info_buf = page.xpath('//table[@class="fotos" or @class="fotos fotos1" or @class="fotos fotos2"]/tr/td/a/attribute::href')
-      for imageUrl in info_buf:
+      imageUrls = page.xpath('//table[@class="fotos" or @class="fotos fotos1" or @class="fotos fotos2"]/tr/td/a/attribute::href')
+      for imageUrl in imageUrls:
         # Получаем страницу с картинкою.
         page = XMLElementFromURLWithRetries(KINOPOISK_BASE + imageUrl.lstrip('/'))
-        imageUrl = page.xpath('//table[@id="main_table"]/tr/td/a/img/attribute::src')
-        if not len(imageUrl):
-            imageUrl = page.xpath('//table[@id="main_table"]/tr/td/img/attribute::src')
-        if len(imageUrl) == 1:
-          imageUrl = imageUrl[0]
+        if not page:
+          continue
+        imageUrlList = page.xpath('//table[@id="main_table"]/tr/td/a/img/attribute::src')
+        if not len(imageUrlList):
+          imageUrlList = page.xpath('//table[@id="main_table"]/*/td/img/attribute::src')
+        if len(imageUrlList) > 0:
+          totalFetched += 1
+          imageUrl = ensureAbsoluteUrl(imageUrlList[0])
           name = imageUrl.split('/')[-1]
           if name not in metadata.art:
             try:
+              sendToFineLog(' ... fetching background art "%s" from URL "%s"' % (str(name), str(imageUrl)))
               imgResource = Proxy.Media(HTTP.Request(imageUrl), sort_order = 1)
-              sendToFineLog(' ... parsed a background art: "%s" from URL "%s"' % (str(name), str(imageUrl)))
+              sendToFinestLog(' ... fetching poster SUCCESS')
               metadata.art[name] = imgResource
-              totalFetched += 1
-              if totalFetched >= MAX_BACKGROUND_ART:
-                return
             except:
+              totalFetched -= 1
               sendToErrorLog(getExceptionInfo('unable to parse background art page (2)'))
+          if totalFetched >= MAX_BACKGROUND_ART:
+            return
   else:
     sendToFineLog(' ... determined NO background art addresses')
 
@@ -624,6 +637,20 @@ def sanitizeString(msg):
   res = msg.replace(u'\x85', u'...')
   res = res.replace(u'\x97', u'-')
   return res
+
+
+def ensureAbsoluteUrl(url):
+  """ Returns an absolute URL (starts with http://)
+      pre-pending base kinoposk URL to the passed URL when necessary.
+  """
+  if url is None or len(url.strip()) < 10:
+    return None
+  url = url.strip()
+  if url[0:4] == 'http':
+    return url
+  if url[0] == '/':
+    url = url[1:]
+  return KINOPOISK_BASE + url
 
 
 def getExceptionInfo(msg):
