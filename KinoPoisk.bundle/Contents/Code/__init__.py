@@ -147,25 +147,28 @@ class PlexMovieAgent(Agent.Movies):
 
 
   def updateMediaItem(self, metadata, kinoPoiskId):
+
+    parseAllActors = False
+
     titlePage =  XMLElementFromURLWithRetries(KINOPOISK_TITLE_PAGE_URL % kinoPoiskId)
     if titlePage:
       sendToFineLog('got a KinoPoisk page for movie title id: "%s"' % kinoPoiskId)
       try:
-        parseTitleInfo(titlePage, metadata)                            # Title. Название на русском языке.
-        parseOriginalTitleInfo(titlePage, metadata)                    # Original title. Название на оригинальном языке.
-        parseSummaryInfo(titlePage, metadata)                          # Summary. Описание.
-        parseRatingInfo(titlePage, metadata, kinoPoiskId)              # Rating. Рейтинг.
+        resetMediaMetadata(metadata)
+        parseTitleInfo(titlePage, metadata)                                       # Title. Название на русском языке.
+        parseOriginalTitleInfo(titlePage, metadata)                               # Original title. Название на оригинальном языке.
+        parseSummaryInfo(titlePage, metadata)                                     # Summary. Описание.
+        parseRatingInfo(titlePage, metadata, kinoPoiskId)                         # Rating. Рейтинг.
 
         parseInfoTableTagAndUpdateMetadata(titlePage, metadata)
 
-        parseStudioInfo(metadata, kinoPoiskId)                         # Studio. Студия.
+        parseStudioInfo(metadata, kinoPoiskId)                                    # Studio. Студия.
 
-        # TODO(zhenya): add the two together.
-        parseActorsInfo(titlePage, metadata)                           # Actors. Актёры.
-        parsePeoplePageInfo(metadata, kinoPoiskId)                     # People. Студия.
 
-        parsePostersInfo(metadata, kinoPoiskId)                        # Posters. Постеры.
-        parseBackgroundArtInfo(metadata, kinoPoiskId)                  # Background art. Задники.
+        parsePeoplePageInfo(titlePage, metadata, kinoPoiskId, parseAllActors)     # Actors, etc. Актёры. др.
+
+        parsePostersInfo(metadata, kinoPoiskId)                                   # Posters. Постеры.
+        parseBackgroundArtInfo(metadata, kinoPoiskId)                             # Background art. Задники.
       except:
         sendToErrorLog(getExceptionInfo('failed to update metadata for id %s' % kinoPoiskId))
 
@@ -176,12 +179,13 @@ def parseInfoTableTagAndUpdateMetadata(page, metadata):
   """
   mainInfoTagRows = page.xpath('//table[@class="info"]/tr')
   sendToFineLog('parsed %d rows from the main info table tag' % len(mainInfoTagRows))
+  directors = []
   for infoRowElem in mainInfoTagRows:
     headerTypeElem =  infoRowElem.xpath('./td[@class="type"]/text()')
     if len(headerTypeElem) != 1:
       continue
     rowTypeKey = headerTypeElem[0]
-    if rowTypeKey == u'режиссер':
+    if rowTypeKey == u'режиссер' or rowTypeKey == u'директор фильма':
       parseDirectorsInfo(infoRowElem, metadata)             # Director. Режиссер.
     elif rowTypeKey == u'год':
       parseYearInfo(infoRowElem, metadata)                  # Year. Год.
@@ -205,7 +209,6 @@ def parseInfoTableTagAndUpdateMetadata(page, metadata):
          rowTypeKey == u'монтаж' or \
          rowTypeKey == u'бюджет' or \
          rowTypeKey == u'сборы в США' or \
-         rowTypeKey == u'директор фильма' or \
          rowTypeKey == u'релиз на DVD' or \
          rowTypeKey == u'зрители' or \
          rowTypeKey == u'монтаж':
@@ -234,18 +237,18 @@ def parseOriginalTitleInfo(page, metadata):
     metadata.original_title = origTitle
 
 
-def parseActorsInfo(page, metadata):
+def parseActorsInfoIntoMap(page):
+  actorsMap = {}
   actors = page.xpath('//td[@class="actor_list"]/div/span')
   sendToFineLog(' ... parsed %d actor tags' % len(actors))
-  metadata.roles.clear()
   for actorSpanTag in actors:
     actorList = actorSpanTag.xpath('./a[contains(@href,"/level/4/people/")]/text()')
     if len(actorList):
       for actor in actorList:
         if actor != u'...':
           sendToFineLog(' . . . . actor: "%s"' % actor)
-          role = metadata.roles.new()
-          role.actor = actor
+          actorsMap[actor] = actor
+  return actorsMap
 
 
 def parseSummaryInfo(page, metadata):
@@ -284,7 +287,6 @@ def parseDirectorsInfo(infoRowElem, metadata):
   directors = infoRowElem.xpath('.//a/text()')
   sendToFineLog(' ... parsed %d director tags' % len(directors))
   if len(directors):
-    metadata.directors.clear()
     for director in directors:
       if director != u'...':
         sendToFineLog(' . . . . director: "%s"' % director)
@@ -305,7 +307,6 @@ def parseWritersInfo(infoRowElem, metadata):
   writers = infoRowElem.xpath('.//a/text()')
   sendToFineLog(' ... parsed %d writer tags' % len(writers))
   if len(writers):
-    metadata.writers.clear()
     for writer in writers:
       if writer != u'...':
         sendToFineLog(' . . . . writer "%s"' % writer)
@@ -316,7 +317,6 @@ def parseGenresInfo(infoRowElem, metadata):
   genres = infoRowElem.xpath('.//a/text()')
   sendToFineLog(' ... parsed %d genre tags' % len(genres))
   if len(genres):
-    metadata.genres.clear()
     for genre in genres:
       if genre != u'...':
         genre = genre.capitalize()
@@ -371,65 +371,85 @@ def parseOriginallyAvailableInfo(infoRowElem, metadata):
       sendToErrorLog(getExceptionInfo('unable to parse originally available date'))
 
 
-def parsePeoplePageInfo(metadata, kinoPoiskId):
-  """ Parses people - mostly actors, but here (on this page)
+def parsePeoplePageInfo(titlePage, metadata, kinoPoiskId, parseAllActors):
+  """ Parses people - mostly actors - here (on this page)
       we have access to extensive information about all who participated
       creating this movie.
+      @param actors - actors that are parsed from the main movie title page;
+      @param parseAllActors - true when we wan to parse all actors from this page;
   """
+  # First, parse actors from the main title page.
+  actorsMap = parseActorsInfoIntoMap(titlePage)
+  mainActors = []
+  otherActors = []
+
+  # Now, parse a dedicated 'people' page.
   page = XMLElementFromURLWithRetries(KINOPOISK_PEOPLE % kinoPoiskId)
   if not page:
+    sendToFinestLog('NO people page')
+    for actorName in actorsMap.keys():
+      addActorToMetadata(metadata, actorName, None)
     return
-  # TODO(zhenya): uncomment and fix.
-        # people_type = None
-        # peoples = page.xpath('//div[@id="content_block"]/table/tr/td/div[@class="block_left"]/*')
-        # for info_buf in peoples:
-          # try:
-            # if info_buf.tag == u'table':
-              # info_buf = info_buf.xpath('./tr/td[@style="padding-left:20px;border-bottom:2px solid #f60;font-size:16px"]/text()')
-              # if info_buf[0] == u'Актеры':
-                # people_type = 'role'
-                # metadata.roles.clear()
+  personType = None
+  peopleTags = page.xpath('//div[@id="content_block"]/table/tr/td/div[@class="block_left"]/*')
+  for peopleTagElem in peopleTags:
+    try:
+      if peopleTagElem.tag == 'table':
+        personType = None
+        tagElems = peopleTagElem.xpath('./tr/td[@style="padding-left:20px;border-bottom:2px solid #f60;font-size:16px"]/text()')
+        if len(tagElems):
+          tagName = tagElems[0]
+          if tagName == u'Актеры':
+            personType = 'actor'
+          elif tagName == u'Директора фильма' or tagName == u'Режиссеры':
+            personType = 'director'
+          elif tagName == u'Сценаристы':
+            personType = 'writer'
+          elif tagName == u'Операторы' or \
+               tagName == u'Монтажеры' or \
+               tagName == u'Композиторы' or \
+               tagName == u'Художники':
+            # Skip these tags for now.
+            personType = None
+            sendToFinestLog('skipping an unsupported tag "%s"' % tagName)
+          else:
+            sendToFinestLog('skipping an unknown tag "%s"' % tagName)
+      elif peopleTagElem.tag == 'div':
+        personNameElems = peopleTagElem.xpath('./div/div/div[@class="name"]/a/text()')
+        personName = None
+        if len(personNameElems):
+          personName = personNameElems[0]
+        if personType == 'actor':
+          actorRoleElems = peopleTagElem.xpath('./div/div/div[@class="role"]/text()')
+          if len(actorRoleElems):
+            roleName = str(actorRoleElems[0]).strip().strip('. ')
+            sendToFineLog(' . . . . parsed actor "%s" with role "%s"' % (personName, roleName))
+            if personName in actorsMap:
+              mainActors.append((personName, roleName))
+              del actorsMap[personName]
+            elif parseAllActors:
+              otherActors.append((personName, roleName))
+      else:
+        personType = None
+    except:
+      sendToErrorLog(getExceptionInfo('unable to parse a people tag'))
 
-              # elif info_buf[0] == u'Режиссеры':
-                # people_type = 'director'
-                # metadata.directors.clear()
-
-              # elif info_buf[0] == u'Сценаристы':
-                # people_type = 'writer'
-                # metadata.writers.clear()
-
-              # else:
-                # people_type = None
-          # except:
-            # pass
-          # try:
-            # if people_type != None and info_buf.tag == u'div':
-
-              # if people_type == 'role':
+  # Adding main actors that were found on the 'people' page.
+  for personName, roleName in mainActors:
+    addActorToMetadata(metadata, personName, roleName)
+  # Adding main actors that were NOT found on the 'people' page.
+  for actorName in actorsMap.keys():
+    addActorToMetadata(metadata, actorName, None)
+  # Adding other actors if requested.
+  for personName, roleName in otherActors:
+    addActorToMetadata(metadata, personName, roleName)
 
 
-                # role = metadata.roles.new()
-                # role.actor = info_buf.xpath('./p/a/text()')[0].strip(u' .')
-                # info_buf2 = info_buf.xpath('./a[contains(@href,"/level/4/people/")]/text()')
-                # if len(info_buf2):
-                  # for actor in info_buf2:
-                    # if actor != u'...':
-                      # role.actor = actor
-                      # Log(actor.decode('utf-8'))
-                # Log(role.actor.decode('utf-8'))
-                # role.role = info_buf.xpath('./p/text()')[0].strip(u' .')
-                # info_buf = info_buf.xpath('./a/img/attribute::src')
-                # if not(info_buf[0].endswith('no-poster.gif')):
-                  # role.photo = KINOPISK_BASE + info_buf[0].lstrip('/')
-
-              # elif people_type == 'director':
-                # metadata.directors.add(info_buf.xpath('./p/a/text()')[0].strip(u' .'))
-
-              # elif people_type == 'writer':
-                # metadata.writers.add(info_buf.xpath('./p/a/text()')[0].strip(u' .'))
-
-          # except:
-            # pass
+def addActorToMetadata(metadata, actorName, roleName):
+  role = metadata.roles.new()
+  role.actor = actorName
+  if roleName is not None and roleName != '':
+    role.role = roleName
 
 
 def parsePostersInfo(metadata, kinoPoiskId):
@@ -558,6 +578,24 @@ def computeTitleScore(mediaName, mediaYear, title, year, itemIndex):
   if mediaYear is not None and mediaYear != year:
     score = score - SCORE_PENALTY_YEAR_WRONG
   return score
+
+
+def resetMediaMetadata(metadata):
+  metadata.genres.clear()
+  metadata.directors.clear()
+  metadata.writers.clear()
+  metadata.roles.clear()
+  metadata.countries.clear()
+  metadata.collections.clear()
+  metadata.studio = ''
+  metadata.summary = ''
+  metadata.title = ''
+#        metadata.trivia = ''
+#        metadata.quotes = ''
+  metadata.year = None
+  metadata.originally_available_at = None
+  metadata.original_title = ''
+  metadata.duration = None
 
 
 def httpRequest(url):
