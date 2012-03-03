@@ -7,7 +7,8 @@ KINOPOISK_IS_DEBUG = True
 # Supported values are: 0 = none, 1 = error, 2 = warning, 3 = info, 4 = fine, 5 = finest.
 kinoPoiskLogLevel = 5 # Default is error.
 
-KINOPOISK_PAGE_ENCODING = 'cp1251'
+ENCODING_KINOPOISK_PAGE = 'cp1251'
+ENCODING_PLEX = 'utf-8'
 
 # Разные страницы сайта.
 KINOPOISK_BASE = 'http://www.kinopoisk.ru/'
@@ -27,6 +28,7 @@ MATCHER_MOVIE_DURATION = re.compile('\s*(\d+).*?', re.UNICODE | re.DOTALL)
 
 SCORE_PENALTY_ITEM_ORDER = 3
 SCORE_PENALTY_YEAR_WRONG = 4
+SCORE_PENALTY_NO_MATCH = 50
 
 # Рейтинги.
 DEFAULT_MPAA = u'R'
@@ -135,7 +137,7 @@ class PlexMovieAgent(Agent.Movies):
     """
     sendToInfoLog('UPDATE START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
     part = media.items[0].parts[0]
-    filename = part.file.decode('utf-8')
+    filename = part.file.decode(ENCODING_PLEX)
     sendToInfoLog('filename="%s", guid="%s"' % (filename, metadata.guid))
 
     matcher = re.compile(r'//(\d+)\?')
@@ -583,19 +585,48 @@ def XMLElementFromURLWithRetries(url):
   sendToFinestLog('requesting URL: "%s"...' % url)
   res = httpRequest(url)
   if res:
-    res = str(res).decode(KINOPOISK_PAGE_ENCODING)
+    res = str(res).decode(ENCODING_KINOPOISK_PAGE)
 #    sendToFinestLog(res)
     return HTML.ElementFromString(res)
   return None
 
 
 def computeTitleScore(mediaName, mediaYear, title, year, itemIndex):
-  # TODO(zhenya): consider title match when scoring.
+  """ Compares page and media titles taking into consideration
+      media item's year and title values. Returns score [0, 100].
+      Search item scores 100 when:
+        - it's first on the list of KinoPoisk results; AND
+        - it equals to the media title (ignoring case) OR all media title words are found in the search item; AND
+        - search item year equals to media year.
+
+      For now, our title scoring is pretty simple - we check if individual words
+      from media item's title are found in the title from search results.
+      We should also take into consideration order of words, so that "One Two" would not
+      have the same score as "Two One".
+  """
+  sendToFinestLog('comparing "%s"-%s with "%s"-%s...' % (str(mediaName), str(mediaYear), str(title), str(year)))
+  # Max score is when both title and year match exactly.
   score = 100
-  # Item order on the list penalizes the score.
-  score = score - (itemIndex * SCORE_PENALTY_ITEM_ORDER)
-  if mediaYear is not None and mediaYear != year:
+  if str(mediaYear) != str(year):
     score = score - SCORE_PENALTY_YEAR_WRONG
+  mediaName = mediaName.lower()
+  title = title.lower()
+  if mediaName != title:
+    # Look for title word matches.
+    words = mediaName.split()
+    wordMatches = 0
+    encodedTitle = title.encode(ENCODING_PLEX)
+    for word in words:
+      # FYI, using '\b' was troublesome (because of string encoding issues, I think).
+      matcher = re.compile('^(|.*[\W«])%s([\W»].*|)$' % word.encode(ENCODING_PLEX), re.UNICODE)
+      if matcher.search(encodedTitle):
+        wordMatches += 1
+    wordMatchesScore = float(wordMatches) / len(words)
+    score = score - ((float(1) - wordMatchesScore) * SCORE_PENALTY_NO_MATCH)
+
+  # IMPORTANT: always return an int.
+  score = int(score)
+  sendToFinestLog('***** title scored %d' % score)
   return score
 
 
