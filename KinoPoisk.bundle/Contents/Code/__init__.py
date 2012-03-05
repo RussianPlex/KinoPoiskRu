@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import datetime, string, re, time, unicodedata, hashlib, urlparse, types, sys
+import datetime, string, re, time, math, operator, unicodedata, hashlib, urlparse, types, sys
 
 KINOPOISK_IS_DEBUG = True
 
@@ -17,7 +17,9 @@ KINOPOISK_PEOPLE = KINOPOISK_BASE + 'level/19/film/%s/'
 KINOPOISK_STUDIO = KINOPOISK_BASE + 'level/91/film/%s/'
 KINOPOISK_POSTERS = KINOPOISK_BASE + 'level/17/film/%s/page/%d/'
 KINOPOISK_ART = KINOPOISK_BASE + 'level/13/film/%s/page/%d/'
-KINOPOISK_MOVIE_THUMBNAIL = 'http://st.kinopoisk.ru/images/film/%s'
+KINOPOISK_MOVIE_THUMBNAIL = 'http://st.kinopoisk.ru/images/film/%s.jpg'
+KINOPOISK_MOVIE_THUMBNAIL_WIDTH = 130
+KINOPOISK_MOVIE_THUMBNAIL_HEIGHT = 168
 
 # Страница поиска.
 KINOPOISK_SEARCH = 'http://www.kinopoisk.ru/index.php?first=no&kp_query=%s'
@@ -29,6 +31,19 @@ MATCHER_MOVIE_DURATION = re.compile('\s*(\d+).*?', re.UNICODE | re.DOTALL)
 SCORE_PENALTY_ITEM_ORDER = 3
 SCORE_PENALTY_YEAR_WRONG = 4
 SCORE_PENALTY_NO_MATCH = 50
+
+IMAGE_SCORE_ITEM_ORDER_BONUS_MAX = 30
+IMAGE_SCORE_RESOLUTION_BONUS_MAX = 20
+IMAGE_SCORE_RATIO_BONUS_MAX = 40
+IMAGE_SCORE_THUMB_BONUS = 10
+IMAGE_SCORE_MAX_NUMBER_OF_ITEMS = 5
+POSTER_SCORE_MIN_RESOLUTION_PX = 60 * 1000
+POSTER_SCORE_MAX_RESOLUTION_PX = 600 * 1000
+POSTER_SCORE_BEST_RATIO = 0.7
+ART_SCORE_BEST_RATIO = 1.5
+ART_SCORE_MIN_RESOLUTION_PX = 200 * 1000
+ART_SCORE_MAX_RESOLUTION_PX = 1000 * 1000
+
 
 # Рейтинги.
 DEFAULT_MPAA = u'R'
@@ -74,8 +89,11 @@ class PlexMovieAgent(Agent.Movies):
 
     # Получаем страницу поиска
     sendToFinestLog('quering kinopoisk...')
-    page = XMLElementFromURLWithRetries(KINOPOISK_SEARCH % mediaName)
-    if page:
+
+    page = XMLElementFromURLWithRetries(KINOPOISK_SEARCH % mediaName.replace(' ', '%20'))
+    if page is None:
+      sendToWarnLog('nothing was found on kinopoisk for media name "%s"' % mediaName)
+    else:
       # Если страница получена, берем с нее перечень всех названий фильмов.
       sendToFineLog('got a kinopoisk page to parse...')
       divInfoElems = page.xpath('//self::div[@class="info"]/p[@class="name"]/a[contains(@href,"/level/1/film/")]/..')
@@ -88,14 +106,14 @@ class PlexMovieAgent(Agent.Movies):
             if len(anchorFilmElem):
               # Parse kinopoisk movie title id, title and year.
               match = re.search('\/film\/(.+?)\/', anchorFilmElem[0])
-              if match:
+              if match is None:
+                sendToErrorLog('unable to parse movie title id')
+              else:
                 kinoPoiskId = match.groups(1)[0]
                 title = divInfoElem.xpath('.//a[contains(@href,"/level/1/film/")]/text()')[0]
                 year = divInfoElem.xpath('.//span[@class="year"]/text()')[0]
                 score = computeTitleScore(mediaName, mediaYear, title, year, itemIndex)
                 results.Append(MetadataSearchResult(id=kinoPoiskId, name=title, year=year, lang=lang, score=score))
-              else:
-                sendToErrorLog('unable to parse movie title id')
             else:
               sendToWarnLog('unable to find film anchor elements for title "%s"' % mediaName)
           except:
@@ -113,8 +131,6 @@ class PlexMovieAgent(Agent.Movies):
           results.Append(MetadataSearchResult(id=kinoPoiskId, name=title, year=year, lang=lang, score=score))
         except:
           sendToErrorLog(getExceptionInfo('failed to parse a KinoPoisk page'))
-    else:
-      sendToWarnLog('nothing was found on kinopoisk for media name "%s"' % mediaName)
 
     # Sort results according to their score (Сортируем результаты).
     results.Sort('score', descending=True)
@@ -142,11 +158,11 @@ class PlexMovieAgent(Agent.Movies):
 
     matcher = re.compile(r'//(\d+)\?')
     match = matcher.search(metadata.guid)
-    if match:
-      kinoPoiskId = match.groups(1)[0]
-    else:
+    if match is None:
       sendToErrorLog('KinoPoisk movie title id is not specified!')
       raise Exception('ERROR: KinoPoisk movie title id is required!')
+    else:
+      kinoPoiskId = match.groups(1)[0]
     sendToFineLog('parsed KinoPoisk movie title id: "%s"' % kinoPoiskId)
 
     self.updateMediaItem(metadata, kinoPoiskId)
@@ -156,9 +172,8 @@ class PlexMovieAgent(Agent.Movies):
   def updateMediaItem(self, metadata, kinoPoiskId):
 
     parseAllActors = False
-
     titlePage =  XMLElementFromURLWithRetries(KINOPOISK_TITLE_PAGE_URL % kinoPoiskId)
-    if titlePage:
+    if titlePage is not None:
       sendToFineLog('got a KinoPoisk page for movie title id: "%s"' % kinoPoiskId)
       try:
         resetMediaMetadata(metadata)
@@ -166,14 +181,9 @@ class PlexMovieAgent(Agent.Movies):
         parseOriginalTitleInfo(titlePage, metadata)                               # Original title. Название на оригинальном языке.
         parseSummaryInfo(titlePage, metadata)                                     # Summary. Описание.
         parseRatingInfo(titlePage, metadata, kinoPoiskId)                         # Rating. Рейтинг.
-
         parseInfoTableTagAndUpdateMetadata(titlePage, metadata)
-
         parseStudioInfo(metadata, kinoPoiskId)                                    # Studio. Студия.
-
-
         parsePeoplePageInfo(titlePage, metadata, kinoPoiskId, parseAllActors)     # Actors, etc. Актёры. др.
-
         parsePostersInfo(metadata, kinoPoiskId)                                   # Posters. Постеры.
         parseBackgroundArtInfo(metadata, kinoPoiskId)                             # Background art. Задники.
       except:
@@ -346,7 +356,7 @@ def parseContentRatingInfo(infoRowElem, metadata):
   contentRatingElems = infoRowElem.xpath('.//a/img/attribute::src')
   if len(contentRatingElems) == 1:
     match = re.search('\/([^/.]+?)\.gif$',contentRatingElems[0])
-    if match:
+    if match is not None:
       contentRating = match.groups(1)[0]
       sendToFineLog(' ... parsed content rating: "%s"' % str(contentRating))
       metadata.content_rating = contentRating
@@ -357,7 +367,7 @@ def parseDurationInfo(infoRowElem, metadata):
   if len(durationElems) > 0:
     try:
       match = MATCHER_MOVIE_DURATION.search(durationElems[0])
-      if match:
+      if match is not None:
         duration = int(int(match.groups(1)[0])) * 1000
         sendToFineLog(' ... parsed duration: "%s"' % str(duration))
         metadata.duration = duration
@@ -394,7 +404,7 @@ def parsePeoplePageInfo(titlePage, metadata, kinoPoiskId, parseAllActors):
 
   # Now, parse a dedicated 'people' page.
   page = XMLElementFromURLWithRetries(KINOPOISK_PEOPLE % kinoPoiskId)
-  if not page:
+  if page is None:
     sendToFinestLog('NO people page')
     for actorName in actorsMap.keys():
       addActorToMetadata(metadata, actorName, None)
@@ -463,119 +473,40 @@ def addActorToMetadata(metadata, actorName, roleName):
 
 
 def parsePostersInfo(metadata, kinoPoiskId):
-  # Получение адресов постеров.
-  pages = []
-  page = XMLElementFromURLWithRetries(KINOPOISK_POSTERS % (kinoPoiskId, 1))
-  if page:
-    pages.append(page)
-    nav = page.xpath('//div[@class="navigator"]/ul/li[@class="arr"]/a')
-    if nav:
-      nav = nav[-1].xpath('./attribute::href')[0]
-      nav = re.search('page\/(\d+?)\/$', nav)
-      try:
-        for p_i in range(2, int(nav.groups(1)[0]) + 1):
-          page =  XMLElementFromURLWithRetries(KINOPOISK_POSTERS % (kinoPoiskId, p_i))
-          if page:
-            pages.append(page)
-      except:
-        sendToErrorLog(getExceptionInfo('unable to parse posters page (1)'))
+  """ Fetches and populates posters metadata.
+      Получение адресов постеров.
+  """
+  sendToFineLog('fetching posters for title id "%s"...' % str(kinoPoiskId))
+  loadAllPages = MAX_POSTERS > 20
+  posterPages = fetchImageDataPages(KINOPOISK_POSTERS, kinoPoiskId, loadAllPages)
+
+  # Add a thumbnail first (it will get moved down later if more images are found).
+  imageDictList = [{
+    'thumbImgUrl': None,
+    'fullImgUrl': KINOPOISK_MOVIE_THUMBNAIL % kinoPoiskId,
+    'fullImgWidth': KINOPOISK_MOVIE_THUMBNAIL_WIDTH,
+    'fullImgHeight': KINOPOISK_MOVIE_THUMBNAIL_HEIGHT,
+    'index': 0,
+    'score': 0 # Initial score.
+  }]
 
   # Получение URL постеров.
-  totalFetched = 0
-  if len(pages):
-    for page in pages:
-      imageUrls = page.xpath('//table[@class="fotos" or @class="fotos fotos1" or @class="fotos fotos2"]/tr/td/a/attribute::href')
-      for imageUrl in imageUrls:
-        sendToFineLog(' ... checking image with URL "%s"' % str(imageUrl))
-
-        # Получаем страницу с картинкою.
-        page = XMLElementFromURLWithRetries(KINOPOISK_BASE + imageUrl.lstrip('/'))
-        if not page:
-          continue
-        imageUrlList = page.xpath('//table[@id="main_table"]/tr/td/a/img/attribute::src')
-        if not len(imageUrlList):
-          imageUrlList = page.xpath('//table[@id="main_table"]/*/td/img/attribute::src')
-        if len(imageUrlList):
-          totalFetched += 1
-          imageUrl = ensureAbsoluteUrl(imageUrlList[0])
-          name = imageUrl.split('/')[-1]
-          if name not in metadata.posters:
-            try:
-              sendToFineLog(' ... fetching poster "%s" from URL "%s"' % (str(name), str(imageUrl)))
-              imgResource = Proxy.Media(HTTP.Request(imageUrl), sort_order = 1)
-              sendToFinestLog(' ... fetching poster SUCCESS')
-              metadata.posters[name] = imgResource
-            except:
-              totalFetched -= 1
-              sendToErrorLog(getExceptionInfo('unable to parse posters page (2)'))
-          if totalFetched >= MAX_POSTERS:
-            return
-  else:
-    sendToFineLog(' ... determined NO poster addresses')
-
-  # If nothing is found, let's grab at least a small thumb.
-  # На всякий случай забираем картинку низкого качества.
-  if totalFetched <= 2:
-    try:
-      sendToFinestLog(' ... got too few posters, also getting a thumb')
-      name = kinoPoiskId + '.jpg'
-      imageUrl = KINOPOISK_MOVIE_THUMBNAIL % name
-      if name not in metadata.posters:
-        sendToFineLog(' ... fetching thumbnail "%s" from URL "%s"' % (str(name), str(imageUrl)))
-        metadata.posters[name] = Proxy.Media(HTTP.Request(imageUrl), sort_order = 1)
-        sendToFinestLog(' ... fetching thumbnail SUCCESS')
-    except:
-      sendToErrorLog(getExceptionInfo('unable to parse posters page (3)'))
+  updateImageMetadata(posterPages, imageDictList, metadata, MAX_POSTERS, True)
 
 
 def parseBackgroundArtInfo(metadata, kinoPoiskId):
-  # Получение адресов задников
-  pages = []
-  page = XMLElementFromURLWithRetries(KINOPOISK_ART % (kinoPoiskId, 1))
-  if page:
-    pages.append(page)
-    nav = page.xpath('//div[@class="navigator"]/ul/li[@class="arr"]/a')
-    if nav:
-      nav = nav[-1].xpath('./attribute::href')[0]
-      nav = re.search('page\/(\d+?)\/$', nav)
-      try:
-        for p_i in range(2, int(nav.groups(1)[0]) + 1):
-          page =  XMLElementFromURLWithRetries(KINOPOISK_ART % (kinoPoiskId, p_i))
-          if page:
-            pages.append(page)
-      except:
-        sendToErrorLog(getExceptionInfo('unable to parse background art page (1)'))
+  """ Fetches and populates background art metadata.
+      Получение адресов задников.
+  """
+  sendToFineLog('fetching background art for title id "%s"...' % str(kinoPoiskId))
+  loadAllPages = MAX_BACKGROUND_ART > 20
+  artPages = fetchImageDataPages(KINOPOISK_ART, kinoPoiskId, loadAllPages)
+  if not len(artPages):
+    sendToFineLog(' ... determined NO background art URLs')
+    return
 
   # Получение урлов задников.
-  totalFetched = 0
-  if len(pages):
-    for page in pages:
-      imageUrls = page.xpath('//table[@class="fotos" or @class="fotos fotos1" or @class="fotos fotos2"]/tr/td/a/attribute::href')
-      for imageUrl in imageUrls:
-        # Получаем страницу с картинкою.
-        page = XMLElementFromURLWithRetries(KINOPOISK_BASE + imageUrl.lstrip('/'))
-        if not page:
-          continue
-        imageUrlList = page.xpath('//table[@id="main_table"]/tr/td/a/img/attribute::src')
-        if not len(imageUrlList):
-          imageUrlList = page.xpath('//table[@id="main_table"]/*/td/img/attribute::src')
-        if len(imageUrlList) > 0:
-          totalFetched += 1
-          imageUrl = ensureAbsoluteUrl(imageUrlList[0])
-          name = imageUrl.split('/')[-1]
-          if name not in metadata.art:
-            try:
-              sendToFineLog(' ... fetching background art "%s" from URL "%s"' % (str(name), str(imageUrl)))
-              imgResource = Proxy.Media(HTTP.Request(imageUrl), sort_order = 1)
-              sendToFinestLog(' ... fetching poster SUCCESS')
-              metadata.art[name] = imgResource
-            except:
-              totalFetched -= 1
-              sendToErrorLog(getExceptionInfo('unable to parse background art page (2)'))
-          if totalFetched >= MAX_BACKGROUND_ART:
-            return
-  else:
-    sendToFineLog(' ... determined NO background art addresses')
+  updateImageMetadata(artPages, [], metadata, MAX_BACKGROUND_ART, False)
 
 
 def XMLElementFromURLWithRetries(url):
@@ -584,11 +515,12 @@ def XMLElementFromURLWithRetries(url):
   """
   sendToFinestLog('requesting URL: "%s"...' % url)
   res = httpRequest(url)
-  if res:
+  if res is None:
+    return None
+  else:
     res = str(res).decode(ENCODING_KINOPOISK_PAGE)
 #    sendToFinestLog(res)
     return HTML.ElementFromString(res)
-  return None
 
 
 def computeTitleScore(mediaName, mediaYear, title, year, itemIndex):
@@ -619,7 +551,7 @@ def computeTitleScore(mediaName, mediaYear, title, year, itemIndex):
     for word in words:
       # FYI, using '\b' was troublesome (because of string encoding issues, I think).
       matcher = re.compile('^(|.*[\W«])%s([\W»].*|)$' % word.encode(ENCODING_PLEX), re.UNICODE)
-      if matcher.search(encodedTitle):
+      if matcher.search(encodedTitle) is not None:
         wordMatches += 1
     wordMatchesScore = float(wordMatches) / len(words)
     score = score - ((float(1) - wordMatchesScore) * SCORE_PENALTY_NO_MATCH)
@@ -679,14 +611,201 @@ def ensureAbsoluteUrl(url):
   url = url.strip()
   if url[0:4] == 'http':
     return url
-  if url[0] == '/':
-    url = url[1:]
-  return KINOPOISK_BASE + url
+  return KINOPOISK_BASE + url.lstrip('/')
 
 
 def getExceptionInfo(msg):
   excInfo = sys.exc_info()
   return '%s; exception: %s; cause: %s' % (msg, excInfo[0], excInfo[1])
+
+
+def parseXpathElementValue(elem, path):
+  values = elem.xpath(path)
+  if len(values):
+    return values[0]
+  return None
+
+
+def updateImageMetadata(pages, imageDictList, metadata, maxImages, isPoster):
+  # Parsing URLs from the passed pages.
+  for page in pages:
+    parseImageDataFromPhotoTableTag(page, imageDictList)
+
+  # Sort results according to their score. Сортируем результаты.
+  scorePosterResults(imageDictList, isPoster)
+  imageDictList.sort(key=operator.itemgetter('score'))
+  imageDictList.reverse()
+  validNames = []
+  if kinoPoiskLogLevel >= 4:
+    sendToInfoLog('image search produced %d results:' % len(imageDictList))
+    index = 0
+    for result in imageDictList:
+      sendToInfoLog(' ... result %d: index="%s", score="%s", URL="%s".' % (index, result['index'], result['score'], result['fullImgUrl']))
+      index += 1
+
+  # Now, walk over the top N (<max) results and update metadata.
+  index = 0
+  if isPoster:
+    imagesContainer = metadata.posters
+  else:
+    imagesContainer = metadata.art
+  for result in imageDictList:
+    fullImgUrl = result['fullImgUrl']
+    validNames.append(fullImgUrl)
+    if fullImgUrl not in imagesContainer:
+      thumbImgUrl = result['thumbImgUrl']
+      if thumbImgUrl is None:
+        img = fullImgUrl
+      else:
+        img = fullImgUrl
+      # NOTE(zhenya): I think sort_order doesn't really matter. :-(
+      imagesContainer[fullImgUrl] = Proxy.Preview(HTTP.Request(img), sort_order = index)
+    index += 1
+    if index >= maxImages:
+      break
+    imagesContainer.validate_keys(validNames)
+
+
+def fetchImageDataPages(urlTemplate, kinoPoiskId, getAllPages):
+  pages = []
+  page = XMLElementFromURLWithRetries(urlTemplate % (kinoPoiskId, 1))
+  if page is not None:
+    pages.append(page)
+    if getAllPages:
+      anchorElems = page.xpath('//div[@class="navigator"]/ul/li[@class="arr"]/a')
+      if len(anchorElems):
+        nav = parseXpathElementValue(anchorElems[-1], './attribute::href')
+        match = re.search('page\/(\d+?)\/$', nav)
+        if match is not None:
+          try:
+            for pageIndex in range(2, int(match.groups(1)[0]) + 1):
+              page =  XMLElementFromURLWithRetries(urlTemplate % (kinoPoiskId, pageIndex))
+              if page is not None:
+                pages.append(page)
+          except:
+            sendToErrorLog(getExceptionInfo('unable to parse image art page'))
+  return pages
+
+
+def parseImageDataFromPhotoTableTag(page, imageDictList):
+  anchorElems = page.xpath('//table[@class="fotos" or @class="fotos fotos1" or @class="fotos fotos2"]/tr/td/a')
+  for anchorElem in anchorElems:
+    imageDict = None
+    try:
+      currItemIndex = len(imageDictList)
+      imageDict = parseImageDataFromAnchorElement(anchorElem, currItemIndex)
+    except:
+      sendToErrorLog(getExceptionInfo('unable to parse image URLs'))
+    if imageDict is None:
+      sendToFinestLog('no URLs - skipping an image')
+      continue
+    else:
+      imageDictList.append(imageDict)
+      sendToFinestLog('GOT URLs for an image: index=%d, thumb="%s", full="%s" (%sx%s)' %
+          (imageDict['index'], str(imageDict['thumbImgUrl']), str(imageDict['fullImgUrl']),
+          str(imageDict['fullImgWidth']), str(imageDict['fullImgHeight'])))
+
+
+def parseImageDataFromAnchorElement(anchorElem, index):
+  thumbSizeUrl = None
+  fullSizeUrl = None
+  fullSizeWidth = None
+  fullSizeHeight = None
+  fullSizeProxyPageUrl = anchorElem.get('href')
+  thumbSizeImgElem = parseXpathElementValue(anchorElem, './img')
+  if thumbSizeImgElem is not None:
+    thumbSizeUrl = thumbSizeImgElem.get('src')
+    if thumbSizeUrl is not None:
+      thumbSizeUrl = ensureAbsoluteUrl(thumbSizeUrl)
+  if fullSizeProxyPageUrl is not None:
+    fullSizeProxyPage = XMLElementFromURLWithRetries(ensureAbsoluteUrl(fullSizeProxyPageUrl))
+    if fullSizeProxyPage is not None:
+      imageElem = parseXpathElementValue(fullSizeProxyPage, '//img[@id="image"]')
+      if imageElem is not None:
+        fullSizeUrl = imageElem.get('src')
+        fullSizeWidth = imageElem.get('width')
+        fullSizeHeight = imageElem.get('height')
+
+  # If we have no full size image URL, we could use the thumb's.
+  if fullSizeUrl is None and thumbSizeUrl is not None:
+      sendToFinestLog('found no full size image, will use the thumbnail')
+      fullSizeUrl = thumbSizeUrl
+      fullSizeWidth = thumbSizeUrl.get('width')
+      fullSizeHeight = thumbSizeUrl.get('height')
+
+  if fullSizeUrl is None and thumbSizeUrl is None:
+    return None
+  return {
+    'thumbImgUrl': thumbSizeUrl,
+    'fullImgUrl': ensureAbsoluteUrl(fullSizeUrl),
+    'fullImgWidth': int(fullSizeWidth),
+    'fullImgHeight': int(fullSizeHeight),
+    'index': index,
+    'score': 0 # Initial score.
+    }
+
+
+def scorePosterResults(imageDictList, isPoster):
+  for imageDict in imageDictList:
+    sendToFinestLog('-------Scoring image %sx%s with index %d:\nfull image URL: "%s"\nthumb image URL: %s' %
+                    (str(imageDict['fullImgWidth']), str(imageDict['fullImgHeight']), imageDict['index'], str(imageDict['fullImgUrl']), str(imageDict['thumbImgUrl'])))
+    score = 0
+    fullImgUrl = imageDict['fullImgUrl']
+    if fullImgUrl is None:
+      imageDict['score'] = 0
+      continue
+
+    if imageDict['index'] < IMAGE_SCORE_MAX_NUMBER_OF_ITEMS:
+      # Score bonus from index for items below 10 on the list.
+      bonus = IMAGE_SCORE_ITEM_ORDER_BONUS_MAX * \
+          ((IMAGE_SCORE_MAX_NUMBER_OF_ITEMS - imageDict['index']) / float(IMAGE_SCORE_MAX_NUMBER_OF_ITEMS))
+      sendToFinestLog('++++ adding order bonus: +%s' % str(bonus))
+      score += bonus
+
+    fullImgWidth = imageDict['fullImgWidth']
+    fullImgHeight = imageDict['fullImgHeight']
+    if fullImgWidth is not None and fullImgHeight is not None:
+      # Get a resolution bonus if width*height is more than a certain min value.
+      if isPoster:
+        minPx = POSTER_SCORE_MIN_RESOLUTION_PX
+        maxPx = POSTER_SCORE_MAX_RESOLUTION_PX
+        bestRatio = POSTER_SCORE_BEST_RATIO
+      else:
+        minPx = ART_SCORE_MIN_RESOLUTION_PX
+        maxPx = ART_SCORE_MAX_RESOLUTION_PX
+        bestRatio = ART_SCORE_BEST_RATIO
+      pixelsCount = fullImgWidth * fullImgHeight
+      if pixelsCount > minPx:
+        if pixelsCount > maxPx:
+          pixelsCount = maxPx
+        bonus = float(IMAGE_SCORE_RESOLUTION_BONUS_MAX) * \
+            float((pixelsCount - minPx)) / float((maxPx - minPx))
+        sendToFinestLog('++++ adding resolution bonus: +%s' % str(bonus))
+        score += bonus
+      else:
+        sendToFinestLog('++++ no resolution bonus for %dx%d' % (fullImgWidth, fullImgHeight))
+
+      # Get an orientation (Portrait vs Landscape) bonus. (we prefer images that are have portrait orientation.
+      ratio = fullImgWidth / float(fullImgHeight)
+      radioDiff = math.fabs(bestRatio - ratio)
+      if radioDiff < 0.5:
+        bonus = IMAGE_SCORE_RATIO_BONUS_MAX * (0.5 - radioDiff) * 2.0
+        sendToFinestLog('++++ adding "%s" ratio bonus: +%s' % (str(ratio), str(bonus)))
+        score += bonus
+      else:
+        # Ignoring Landscape ratios.
+        sendToFinestLog('++++ no ratio bonus for %dx%d' % (fullImgWidth, fullImgHeight))
+    else:
+      sendToFinestLog('++++ no size set - no resolution and no ratio bonus')
+
+    # Get a bonus if image has a separate thumbnail URL.
+    thumbImgUrl = imageDict['thumbImgUrl']
+    if thumbImgUrl is not None and fullImgUrl != thumbImgUrl:
+      sendToFinestLog('++++ adding thumbnail bonus: +%d' % IMAGE_SCORE_THUMB_BONUS)
+      score += IMAGE_SCORE_THUMB_BONUS
+
+    sendToFinestLog('--------- SCORE: %d' % int(score))
+    imageDict['score'] = int(score)
 
 
 def sendToFinestLog(msg):
