@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 import datetime, string, re, time, math, operator, unicodedata, hashlib, urlparse, types, sys
 
-KINOPOISK_IS_DEBUG = True
+KINOPOISK_IS_DEBUG = False
 
 # Current log level.
 # Supported values are: 0 = none, 1 = error, 2 = warning, 3 = info, 4 = fine, 5 = finest.
-kinoPoiskLogLevel = 5 # Default is error.
+kinoPoiskLogLevel = 1 # Default is error.
 
 ENCODING_KINOPOISK_PAGE = 'cp1251'
 ENCODING_PLEX = 'utf-8'
@@ -59,7 +59,7 @@ PREF_MAX_POSTERS_NAME = 'kinopoisk_pref_max_posters'
 PREF_MAX_ART_NAME = 'kinopoisk_pref_max_art'
 PREF_GET_ALL_ACTORS = 'kinopoisk_pref_get_all_actors'
 PREF_CACHE_TIME_DEFAULT = CACHE_1MONTH
-PREF_MAX_POSTERS_DEFAULT = 4
+PREF_MAX_POSTERS_DEFAULT = 6
 PREF_MAX_ART_DEFAULT = 4
 
 

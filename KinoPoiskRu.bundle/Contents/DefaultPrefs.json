@@ -11,7 +11,7 @@
     "label": "Максимум обложек",
     "type": "enum",
     "values": ["2", "4", "6", "8", "10", "12", "14", "20", "40"],
-    "default": "4"
+    "default": "6"
   },
   {
     "id": "kinopoisk_pref_max_art",
