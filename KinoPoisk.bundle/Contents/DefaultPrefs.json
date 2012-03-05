@@ -1,33 +1,27 @@
 [
   {
-    "id": "wikiru_pref_cache_time",
+    "id": "kinopoisk_pref_cache_time",
     "label": "Кэширование веб-данных",
     "type": "enum",
     "values": ["1 минута", "1 час", "1 день", "1 неделя", "1 месяц", "1 год"],
-    "default": "1 неделя"
+    "default": "1 месяц"
   },
   {
-    "id": "wikiru_pref_wiki_results",
-    "label": "Максимум результатов",
+    "id": "kinopoisk_pref_max_posters",
+    "label": "Максимум обложек",
     "type": "enum",
-    "values": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
-    "default": "5"
+    "values": ["2", "4", "6", "8", "10", "12", "14", "20", "40"],
+    "default": "4"
   },
   {
-    "id": "wikiru_pref_min_page_score",
-    "label": "Минимальный рэйтинг",
+    "id": "kinopoisk_pref_max_art",
+    "label": "Максимум фотографий",
     "type": "enum",
-    "values": ["10", "20", "30", "40", "50"],
-    "default": "20"
+    "values": ["2", "4", "6", "8", "10", "12", "14", "20", "40"],
+    "default": "4"
   },
   {
-	  "id": "wikiru_pref_ignore_categories",
-		"label": "Игнорировать категории",
-		"type": "bool",
-		"default":	"true"
-	},
-  {
-	  "id": "wikiru_pref_get_all_actors",
+	  "id": "kinopoisk_pref_get_all_actors",
 		"label": "Брать всех актеров",
 		"type": "bool",
 		"default":	"false"

@@ -27,7 +27,6 @@ KINOPOISK_SEARCH = 'http://www.kinopoisk.ru/index.php?first=no&kp_query=%s'
 # Compiled regex matchers.
 MATCHER_MOVIE_DURATION = re.compile('\s*(\d+).*?', re.UNICODE | re.DOTALL)
 
-
 SCORE_PENALTY_ITEM_ORDER = 3
 SCORE_PENALTY_YEAR_WRONG = 4
 SCORE_PENALTY_NO_MATCH = 50
@@ -44,7 +43,6 @@ ART_SCORE_BEST_RATIO = 1.5
 ART_SCORE_MIN_RESOLUTION_PX = 200 * 1000
 ART_SCORE_MAX_RESOLUTION_PX = 1000 * 1000
 
-
 # Рейтинги.
 DEFAULT_MPAA = u'R'
 MPAA_AGE = {u'G': 0, u'PG': 11, u'PG-13': 13, u'R': 16, u'NC-17': 17}
@@ -53,18 +51,42 @@ MPAA_AGE = {u'G': 0, u'PG': 11, u'PG-13': 13, u'R': 16, u'NC-17': 17}
 RU_MONTH = {u'января': '01', u'февраля': '02', u'марта': '03', u'апреля': '04', u'мая': '05', u'июня': '06', u'июля': '07', u'августа': '08', u'сентября': '09', u'октября': '10', u'ноября': '11', u'декабря': '12'}
 
 # Под кого маскируемся =).
-UserAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_2) AppleWebKit/534.51.22 (KHTML, like Gecko) Version/5.1.1 Safari/534.51.22'
+USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_2) AppleWebKit/534.51.22 (KHTML, like Gecko) Version/5.1.1 Safari/534.51.22'
 
-# TODO(zhenya): load these from user preferences.
-MAX_POSTERS = 5
-MAX_BACKGROUND_ART = 5
-CACHE_TIME = CACHE_1DAY
+# Preference item names.
+PREF_CACHE_TIME_NAME = 'kinopoisk_pref_cache_time'
+PREF_MAX_POSTERS_NAME = 'kinopoisk_pref_max_posters'
+PREF_MAX_ART_NAME = 'kinopoisk_pref_max_art'
+PREF_GET_ALL_ACTORS = 'kinopoisk_pref_get_all_actors'
+PREF_CACHE_TIME_DEFAULT = CACHE_1MONTH
+PREF_MAX_POSTERS_DEFAULT = 4
+PREF_MAX_ART_DEFAULT = 4
 
 
 def Start():
   sendToInfoLog('***** START ***** %s' % USER_AGENT)
-  # Setting cache experation time.
-  HTTP.CacheTime = CACHE_TIME
+  # Setting cache expiration time.
+  prefCache = Prefs[PREF_CACHE_TIME_NAME]
+  if prefCache == "1 минута":
+    cacheExp = CACHE_1MINUTE
+  elif prefCache == "1 час":
+    cacheExp = CACHE_1HOUR
+  elif prefCache == "1 день":
+    cacheExp = CACHE_1DAY
+  elif prefCache == "1 неделя":
+    cacheExp = CACHE_1DAY
+  elif prefCache == "1 месяц":
+    cacheExp = CACHE_1MONTH
+  elif prefCache == "1 год":
+    cacheExp = CACHE_1MONTH * 12
+  else:
+    cacheExp = PREF_CACHE_TIME_DEFAULT
+  HTTP.CacheTime = cacheExp
+  sendToInfoLog('PREF: Setting cache expiration to %d seconds (%s).' % (cacheExp, prefCache))
+  sendToInfoLog('PREF: Max poster results is set to %s.' % Prefs[PREF_MAX_POSTERS_NAME])
+  sendToInfoLog('PREF: Max art results is set to %s.' % Prefs[PREF_MAX_ART_NAME])
+  sendToInfoLog('PREF: Parse all actors is set to %s.' % str(Prefs[PREF_GET_ALL_ACTORS]))
+
 
 class PlexMovieAgent(Agent.Movies):
   name = 'KinoPoiskRu'
@@ -476,8 +498,12 @@ def parsePostersInfo(metadata, kinoPoiskId):
   """ Fetches and populates posters metadata.
       Получение адресов постеров.
   """
+  try:
+    maxPosters = int(Prefs[PREF_MAX_POSTERS_NAME])
+  except:
+    maxPosters = PREF_MAX_POSTERS_DEFAULT
   sendToFineLog('fetching posters for title id "%s"...' % str(kinoPoiskId))
-  loadAllPages = MAX_POSTERS > 20
+  loadAllPages = maxPosters > 20
   posterPages = fetchImageDataPages(KINOPOISK_POSTERS, kinoPoiskId, loadAllPages)
 
   # Add a thumbnail first (it will get moved down later if more images are found).
@@ -491,22 +517,26 @@ def parsePostersInfo(metadata, kinoPoiskId):
   }]
 
   # Получение URL постеров.
-  updateImageMetadata(posterPages, imageDictList, metadata, MAX_POSTERS, True)
+  updateImageMetadata(posterPages, imageDictList, metadata, maxPosters, True)
 
 
 def parseBackgroundArtInfo(metadata, kinoPoiskId):
   """ Fetches and populates background art metadata.
       Получение адресов задников.
   """
+  try:
+    maxArt = int(Prefs[PREF_MAX_ART_NAME])
+  except:
+    maxArt = PREF_MAX_ART_DEFAULT
   sendToFineLog('fetching background art for title id "%s"...' % str(kinoPoiskId))
-  loadAllPages = MAX_BACKGROUND_ART > 20
+  loadAllPages = maxArt > 20
   artPages = fetchImageDataPages(KINOPOISK_ART, kinoPoiskId, loadAllPages)
   if not len(artPages):
     sendToFineLog(' ... determined NO background art URLs')
     return
 
   # Получение урлов задников.
-  updateImageMetadata(artPages, [], metadata, MAX_BACKGROUND_ART, False)
+  updateImageMetadata(artPages, [], metadata, maxArt, False)
 
 
 def XMLElementFromURLWithRetries(url):
@@ -587,7 +617,7 @@ def httpRequest(url):
   time.sleep(1)
   for i in range(3):
     try:
-      return HTTP.Request(url, headers = {'User-agent': UserAgent, 'Accept': 'text/html'})
+      return HTTP.Request(url, headers = {'User-agent': USER_AGENT, 'Accept': 'text/html'})
     except:
       sendToErrorLog(getExceptionInfo('Error fetching URL: "%s".' % url))
       time.sleep(1)
