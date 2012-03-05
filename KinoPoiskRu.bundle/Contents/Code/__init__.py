@@ -92,6 +92,7 @@ class PlexMovieAgent(Agent.Movies):
   name = 'KinoPoiskRu'
   languages = [Locale.Language.Russian]
   accepts_from = ['com.plexapp.agents.localmedia']
+  contributes_to = ['com.plexapp.agents.wikipediaru']
 
   ##############################################################################
   ############################# S E A R C H ####################################
@@ -192,8 +193,6 @@ class PlexMovieAgent(Agent.Movies):
 
 
   def updateMediaItem(self, metadata, kinoPoiskId):
-
-    parseAllActors = False
     titlePage =  XMLElementFromURLWithRetries(KINOPOISK_TITLE_PAGE_URL % kinoPoiskId)
     if titlePage is not None:
       sendToFineLog('got a KinoPoisk page for movie title id: "%s"' % kinoPoiskId)
@@ -205,7 +204,7 @@ class PlexMovieAgent(Agent.Movies):
         parseRatingInfo(titlePage, metadata, kinoPoiskId)                         # Rating. Рейтинг.
         parseInfoTableTagAndUpdateMetadata(titlePage, metadata)
         parseStudioInfo(metadata, kinoPoiskId)                                    # Studio. Студия.
-        parsePeoplePageInfo(titlePage, metadata, kinoPoiskId, parseAllActors)     # Actors, etc. Актёры. др.
+        parsePeoplePageInfo(titlePage, metadata, kinoPoiskId)                     # Actors, etc. Актёры. др.
         parsePostersInfo(metadata, kinoPoiskId)                                   # Posters. Постеры.
         parseBackgroundArtInfo(metadata, kinoPoiskId)                             # Background art. Задники.
       except:
@@ -412,14 +411,14 @@ def parseOriginallyAvailableInfo(infoRowElem, metadata):
       sendToErrorLog(getExceptionInfo('unable to parse originally available date'))
 
 
-def parsePeoplePageInfo(titlePage, metadata, kinoPoiskId, parseAllActors):
+def parsePeoplePageInfo(titlePage, metadata, kinoPoiskId):
   """ Parses people - mostly actors - here (on this page)
       we have access to extensive information about all who participated
       creating this movie.
       @param actors - actors that are parsed from the main movie title page;
-      @param parseAllActors - true when we wan to parse all actors from this page;
   """
   # First, parse actors from the main title page.
+  parseAllActors = Prefs[PREF_GET_ALL_ACTORS]
   actorsMap = parseActorsInfoIntoMap(titlePage)
   mainActors = []
   otherActors = []
