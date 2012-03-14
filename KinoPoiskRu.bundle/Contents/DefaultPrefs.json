@@ -25,5 +25,18 @@
 		"label": "Брать всех актеров",
 		"type": "bool",
 		"default":	"false"
+	},
+  {
+    "id": "kinopoisk_pref_log_level",
+    "label": "Уровень логирования",
+    "type": "enum",
+    "values": ["ничего", "ошибки", "предупреждения", "информативно", "подробно", "очень подробно"],
+    "default": "ошибки"
+  },
+  {
+	  "id": "kinopoisk_pref_is_debug",
+		"label": "Дебаг режим",
+		"type": "bool",
+		"default":	"false"
 	}
 ]

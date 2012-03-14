@@ -1,12 +1,6 @@
 # -*- coding: utf-8 -*-
 import datetime, string, re, time, math, operator, unicodedata, hashlib, urlparse, types, sys
 
-KINOPOISK_IS_DEBUG = False
-
-# Current log level.
-# Supported values are: 0 = none, 1 = error, 2 = warning, 3 = info, 4 = fine, 5 = finest.
-kinoPoiskLogLevel = 1 # Default is error.
-
 ENCODING_KINOPOISK_PAGE = 'cp1251'
 ENCODING_PLEX = 'utf-8'
 
@@ -54,6 +48,8 @@ RU_MONTH = {u'января': '01', u'февраля': '02', u'марта': '03',
 USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_2) AppleWebKit/534.51.22 (KHTML, like Gecko) Version/5.1.1 Safari/534.51.22'
 
 # Preference item names.
+PREF_IS_DEBUG_NAME = 'kinopoisk_pref_is_debug'
+PREF_LOG_LEVEL_NAME = 'kinopoisk_pref_log_level'
 PREF_CACHE_TIME_NAME = 'kinopoisk_pref_cache_time'
 PREF_MAX_POSTERS_NAME = 'kinopoisk_pref_max_posters'
 PREF_MAX_ART_NAME = 'kinopoisk_pref_max_art'
@@ -63,30 +59,22 @@ PREF_MAX_POSTERS_DEFAULT = 6
 PREF_MAX_ART_DEFAULT = 4
 
 
+class LocalSettings():
+  """ These instance variables are populated from plugin preferences. """
+  # Current log level.
+  # Supported values are: 0 = none, 1 = error, 2 = warning, 3 = info, 4 = fine, 5 = finest.
+  logLevel = 1
+  isDebug = False
+  maxPosters = PREF_MAX_POSTERS_DEFAULT
+  maxArt = PREF_MAX_ART_DEFAULT
+  getAllActors = False
+
+localPrefs = LocalSettings()
+
+
 def Start():
   sendToInfoLog('***** START ***** %s' % USER_AGENT)
-  # Setting cache expiration time.
-  prefCache = Prefs[PREF_CACHE_TIME_NAME]
-  if prefCache == "1 минута":
-    cacheExp = CACHE_1MINUTE
-  elif prefCache == "1 час":
-    cacheExp = CACHE_1HOUR
-  elif prefCache == "1 день":
-    cacheExp = CACHE_1DAY
-  elif prefCache == "1 неделя":
-    cacheExp = CACHE_1DAY
-  elif prefCache == "1 месяц":
-    cacheExp = CACHE_1MONTH
-  elif prefCache == "1 год":
-    cacheExp = CACHE_1MONTH * 12
-  else:
-    cacheExp = PREF_CACHE_TIME_DEFAULT
-  HTTP.CacheTime = cacheExp
-  sendToInfoLog('PREF: Setting cache expiration to %d seconds (%s).' % (cacheExp, prefCache))
-  sendToInfoLog('PREF: Max poster results is set to %s.' % Prefs[PREF_MAX_POSTERS_NAME])
-  sendToInfoLog('PREF: Max art results is set to %s.' % Prefs[PREF_MAX_ART_NAME])
-  sendToInfoLog('PREF: Parse all actors is set to %s.' % str(Prefs[PREF_GET_ALL_ACTORS]))
-
+  readPluginPreferences()
 
 class PlexMovieAgent(Agent.Movies):
   name = 'KinoPoiskRu'
@@ -157,7 +145,7 @@ class PlexMovieAgent(Agent.Movies):
 
     # Sort results according to their score (Сортируем результаты).
     results.Sort('score', descending=True)
-    if kinoPoiskLogLevel >= 3:
+    if localPrefs.logLevel >= 3:
       sendToInfoLog('search produced %d results:' % len(results))
       index = 0
       for result in results:
@@ -497,12 +485,8 @@ def parsePostersInfo(metadata, kinoPoiskId):
   """ Fetches and populates posters metadata.
       Получение адресов постеров.
   """
-  try:
-    maxPosters = int(Prefs[PREF_MAX_POSTERS_NAME])
-  except:
-    maxPosters = PREF_MAX_POSTERS_DEFAULT
   sendToFineLog('fetching posters for title id "%s"...' % str(kinoPoiskId))
-  loadAllPages = maxPosters > 20
+  loadAllPages = localPrefs.maxPosters > 20
   posterPages = fetchImageDataPages(KINOPOISK_POSTERS, kinoPoiskId, loadAllPages)
 
   # Add a thumbnail first (it will get moved down later if more images are found).
@@ -516,26 +500,22 @@ def parsePostersInfo(metadata, kinoPoiskId):
   }]
 
   # Получение URL постеров.
-  updateImageMetadata(posterPages, imageDictList, metadata, maxPosters, True)
+  updateImageMetadata(posterPages, imageDictList, metadata, localPrefs.maxPosters, True)
 
 
 def parseBackgroundArtInfo(metadata, kinoPoiskId):
   """ Fetches and populates background art metadata.
       Получение адресов задников.
   """
-  try:
-    maxArt = int(Prefs[PREF_MAX_ART_NAME])
-  except:
-    maxArt = PREF_MAX_ART_DEFAULT
   sendToFineLog('fetching background art for title id "%s"...' % str(kinoPoiskId))
-  loadAllPages = maxArt > 20
+  loadAllPages = localPrefs.maxArt > 20
   artPages = fetchImageDataPages(KINOPOISK_ART, kinoPoiskId, loadAllPages)
   if not len(artPages):
     sendToFineLog(' ... determined NO background art URLs')
     return
 
   # Получение урлов задников.
-  updateImageMetadata(artPages, [], metadata, maxArt, False)
+  updateImageMetadata(artPages, [], metadata, localPrefs.maxArt, False)
 
 
 def XMLElementFromURLWithRetries(url):
@@ -665,7 +645,7 @@ def updateImageMetadata(pages, imageDictList, metadata, maxImages, isPoster):
   imageDictList.sort(key=operator.itemgetter('score'))
   imageDictList.reverse()
   validNames = []
-  if kinoPoiskLogLevel >= 4:
+  if localPrefs.logLevel >= 4:
     sendToInfoLog('image search produced %d results:' % len(imageDictList))
     index = 0
     for result in imageDictList:
@@ -838,32 +818,86 @@ def scorePosterResults(imageDictList, isPoster):
 
 
 def sendToFinestLog(msg):
-  if kinoPoiskLogLevel >= 5:
-    sendToLog('FINEST: ' + msg)
+  if localPrefs.logLevel >= 5:
+    if localPrefs.isDebug:
+      print 'FINEST: ' + msg
+    else:
+      Log.Debug(msg)
 
 
 def sendToFineLog(msg):
-  if kinoPoiskLogLevel >= 4:
-    sendToLog('FINE: ' + msg)
+  if localPrefs.logLevel >= 4:
+    if localPrefs.isDebug:
+      print 'FINE: ' + msg
+    else:
+      Log.Info(msg)
 
 
 def sendToInfoLog(msg):
-  if kinoPoiskLogLevel >= 3:
-    sendToLog('INFO: ' + msg)
+  if localPrefs.logLevel >= 3:
+    if localPrefs.isDebug:
+      print 'INFO: ' + msg
+    else:
+      Log.Debug(msg)
 
 
 def sendToWarnLog(msg):
-  if kinoPoiskLogLevel >= 2:
-    sendToLog('WARN: ' + msg)
+  if localPrefs.logLevel >= 2:
+    if localPrefs.isDebug:
+      print 'WARN: ' + msg
+    else:
+      Log.WARN(msg)
 
 
 def sendToErrorLog(msg):
-  if kinoPoiskLogLevel >= 1:
-    sendToLog('ERROR: ' + msg)
+  if localPrefs.logLevel >= 1:
+    if localPrefs.isDebug:
+      print 'ERROR: ' + msg
+    else:
+      Log.ERROR(msg)
 
 
-def sendToLog(msg):
-  if KINOPOISK_IS_DEBUG:
-    print msg
+def readPluginPreferences():
+  prefLogLevel = Prefs[PREF_LOG_LEVEL_NAME]
+  if prefLogLevel == u'ничего':
+    localPrefs.logLevel = 0
+  elif prefLogLevel == u'предупреждения':
+    localPrefs.logLevel = 2
+  elif prefLogLevel == u'информативно':
+    localPrefs.logLevel = 3
+  elif prefLogLevel == u'подробно':
+    localPrefs.logLevel = 4
+  elif prefLogLevel == u'очень подробно':
+    localPrefs.logLevel = 5
   else:
-    Log(msg)
+    localPrefs.logLevel = 1 # Default is error.
+  localPrefs.isDebug = Prefs[PREF_IS_DEBUG_NAME]
+
+  # Setting cache expiration time.
+  prefCache = Prefs[PREF_CACHE_TIME_NAME]
+  if prefCache == u'1 минута':
+    cacheExp = CACHE_1MINUTE
+  elif prefCache == u'1 час':
+    cacheExp = CACHE_1HOUR
+  elif prefCache == u'1 день':
+    cacheExp = CACHE_1DAY
+  elif prefCache == u'1 неделя':
+    cacheExp = CACHE_1DAY
+  elif prefCache == u'1 месяц':
+    cacheExp = CACHE_1MONTH
+  elif prefCache == u'1 год':
+    cacheExp = CACHE_1MONTH * 12
+  else:
+    cacheExp = PREF_CACHE_TIME_DEFAULT
+  HTTP.CacheTime = cacheExp
+
+  localPrefs.maxPosters = int(Prefs[PREF_MAX_POSTERS_NAME])
+  localPrefs.maxArt = int(Prefs[PREF_MAX_ART_NAME])
+  localPrefs.getAllActors = Prefs[PREF_GET_ALL_ACTORS]
+
+  sendToInfoLog('PREF: Setting debug to %s.' % str(localPrefs.isDebug))
+  sendToInfoLog('PREF: Setting log level to %d (%s).' % (localPrefs.logLevel, prefLogLevel))
+  sendToInfoLog('PREF: Setting cache expiration to %d seconds (%s).' % (cacheExp, prefCache))
+  sendToInfoLog('PREF: Max poster results is set to %d.' % localPrefs.maxPosters)
+  sendToInfoLog('PREF: Max art results is set to %d.' % localPrefs.maxArt)
+  sendToInfoLog('PREF: Parse all actors is set to %s.' % str(localPrefs.getAllActors))
