@@ -5,17 +5,12 @@ import datetime, string, re, time, unicodedata, hashlib, urlparse, types
 AGENT_VERSION = '0.1'
 USER_AGENT = 'Plex WikipediaRu Metadata Agent (+http://www.plexapp.com/) v.%s' % AGENT_VERSION
 
-WIKIRU_IS_DEBUG = True
-
-# Current log level.
-# Supported values are: 0 = none, 1 = error, 2 = warning, 3 = info, 4 = fine, 5 = finest.
-wikiRuLogLevel = 1 # Default is error.
-
-
 ##############  Preference item names.
+PREF_IS_DEBUG_NAME = 'wikiru_pref_is_debug'
+PREF_LOG_LEVEL_NAME = 'wikiru_pref_log_level'
 PREF_CACHE_TIME_NAME = 'wikiru_pref_cache_time'
 PREF_MAX_RESULTS_NAME = 'wikiru_pref_wiki_results'
-PREF_CATEGORIES_NAME = 'wikiru_pref_ignore_categories'
+PREF_IGNORE_CATEGORIES_NAME = 'wikiru_pref_ignore_categories'
 PREF_MIN_PAGE_SCORE = 'wikiru_pref_min_page_score'
 PREF_GET_ALL_ACTORS = 'wikiru_pref_get_all_actors'
 
@@ -86,31 +81,23 @@ DEFAULT_ACTOR_ROLE = 'актер'
 #KTRU_QUERY_URL = 'http://www.kino-teatr.ru/search/'
 
 
+class LocalSettings():
+  """ These instance variables are populated from plugin preferences. """
+  # Current log level.
+  # Supported values are: 0 = none, 1 = error, 2 = warning, 3 = info, 4 = fine, 5 = finest.
+  logLevel = 1
+  isDebug = False
+  maxResults = 5
+  minPageScore = 20
+  ignoreCategories = False
+  getAllActors = False
+
+localPrefs = LocalSettings()
+
+
 def Start():
   sendToInfoLog('***** START ***** %s' % USER_AGENT)
-  # Setting cache experation time.
-  prefCache = Prefs[PREF_CACHE_TIME_NAME]
-  if prefCache == "1 минута":
-    cacheExp = CACHE_1MINUTE
-  elif prefCache == "1 час":
-    cacheExp = CACHE_1HOUR
-  elif prefCache == "1 день":
-    cacheExp = CACHE_1DAY
-  elif prefCache == "1 неделя":
-    cacheExp = CACHE_1DAY
-  elif prefCache == "1 месяц":
-    cacheExp = CACHE_1MONTH
-  elif prefCache == "1 год":
-    cacheExp = CACHE_1MONTH * 12
-  else:
-    cacheExp = CACHE_1WEEK
-  HTTP.CacheTime = cacheExp
-  sendToInfoLog('PREF: Setting cache expiration to %d seconds (%s)' % (cacheExp, prefCache))
-  sendToInfoLog('PREF: WIKI max results is set to %s' % Prefs[PREF_MAX_RESULTS_NAME])
-  sendToInfoLog('PREF: Min page score is set to %s' % Prefs[PREF_MIN_PAGE_SCORE])
-  sendToInfoLog('PREF: Ignore WIKI categories is set to %s' % str(Prefs[PREF_CATEGORIES_NAME]))
-  sendToInfoLog('PREF: Parse all actors is set to %s' % str(Prefs[PREF_GET_ALL_ACTORS]))
-
+  readPluginPreferences()
 
 class PlexMovieAgent(Agent.Movies):
   name = 'WikipediaRu'
@@ -141,7 +128,7 @@ class PlexMovieAgent(Agent.Movies):
       # Modify (relax) the query and look for more pages.
       self.findWikiPageMatches(media.name, year, results, lang, isRelax=True)
     results.Sort('score', descending=True)
-    if wikiRuLogLevel >= 3:
+    if localPrefs.logLevel >= 3:
       sendToInfoLog('search produced %d results:' % len(results))
       index = 0
       for result in results:
@@ -182,9 +169,8 @@ class PlexMovieAgent(Agent.Movies):
     imdbData = None
     wikiImgName = None
     wikiPageUrl = WIKI_IDPAGE_URL % wikiId
-    parseCategories = not Prefs[PREF_CATEGORIES_NAME]
-    isGetAllActors = Prefs[PREF_GET_ALL_ACTORS]
-    tmpResult = self.getAndParseItemsWikiPage(wikiPageUrl, metadata, parseCategories = parseCategories, isGetAllActors = isGetAllActors)
+    parseCategories = not localPrefs.ignoreCategories
+    tmpResult = self.getAndParseItemsWikiPage(wikiPageUrl, metadata, parseCategories = parseCategories, isGetAllActors = localPrefs.getAllActors)
     if tmpResult is not None:
       wikiContent = tmpResult['all']
       if 'image' in tmpResult:
@@ -214,6 +200,7 @@ class PlexMovieAgent(Agent.Movies):
     """
     # TODO(zhenya): need to validate the size and proportions of the image.
     # TODO(zhenya): look for other images on IMDB or Google if wikiImgName is not set?
+    # http://www.google.com/search?hl=en&biw=1200&bih=947&tbm=isch&q=Приключения%20Электроника
     sendToFinestLog('fetchAndSetWikiArtwork: WIKI image "%s".' % str(wikiImgName))
     posters_valid_names = list()
     art_valid_names = list()
@@ -245,12 +232,11 @@ class PlexMovieAgent(Agent.Movies):
           raise Exception
 
         thumbUrl = pathMatch[0].get('url')
-        if thumbUrl is not None:
-          url = thumbUrl
+        if thumbUrl is not None and thumbUrl not in metadata.posters:
           response = sendHttpRequest(thumbUrl)
-          metadata.posters[url] = Proxy.Preview(response, sort_order = sortOrder)
-          posters_valid_names.append(url)
-          sendToFineLog('Setting a poster from wikipedia: "%s"' % url)
+          metadata.posters[thumbUrl] = Proxy.Preview(response, sort_order = sortOrder)
+          posters_valid_names.append(thumbUrl)
+          sendToFineLog('Setting a poster from wikipedia: "%s"' % thumbUrl)
     except:
       sendToErrorLog('unable to fetch art work.')
 
@@ -367,7 +353,7 @@ class PlexMovieAgent(Agent.Movies):
       contentDict['id'] = pathMatch[0].get('pageid')
       pathMatch = pathMatch[0].xpath('//revisions/rev')
       if not len(pathMatch):
-        sendToErrorLog('page revision is not found in a WIKI response.')
+        sendToErrorLog('page "%s" revision is not found in a WIKI response.' % wikiPageUrl)
         return None
 
       # This is the content of the entire page for our title.
@@ -521,7 +507,7 @@ class PlexMovieAgent(Agent.Movies):
           metadata.originally_available_at = Datetime.ParseDate('%s-01-01' % year).date()
 
     except:
-      sendToErrorLog('unable to parse wiki page!')
+      sendToErrorLog('unable to parse wiki page: "%s"!' % wikiPageUrl)
 
     sendToFinestLog('::::::: initial score::: %d for WIKI page URL:\n    %s' % (score, wikiPageUrl))
     contentDict['score'] = score
@@ -537,9 +523,7 @@ class PlexMovieAgent(Agent.Movies):
         determine page id, title year, and get the score.
     """
     try:
-      prefMaxResults = int(Prefs[PREF_MAX_RESULTS_NAME])
-      minPageScore = int(Prefs[PREF_MIN_PAGE_SCORE])
-      sendToFineLog('using PREF_MAX_RESULTS_NAME=%s and PREF_MIN_PAGE_SCORE=%s' % (str(prefMaxResults), str(minPageScore)))
+      sendToFineLog('using maxResults=%s and minPageScore=%s' % (str(localPrefs.maxResults), str(localPrefs.minPageScore)))
       pageMatches = []
       queryStr = mediaName
       if not isRelax and mediaYear is not None:
@@ -547,7 +531,7 @@ class PlexMovieAgent(Agent.Movies):
       xmlResult = getXmlFromWikiApiPage(WIKI_QUERY_URL % queryStr)
       pathMatch = xmlResult.xpath('//api/query/searchinfo')
       if not len(pathMatch):
-        sendToErrorLog('searchinfo is not found in a WIKI response.')
+        sendToErrorLog('searchinfo is not found in a WIKI response for "%s"!' % str(mediaName))
         raise Exception
       else:
         if pathMatch[0].get('totalhits') == '0':
@@ -575,7 +559,7 @@ class PlexMovieAgent(Agent.Movies):
 
         score = scoreMovieMatch(mediaName, mediaYear, itemIndex, pageTitle, matchesMap)
         sendToFinestLog('::::::: final score::::: %d for WIKI title page "%s"' % (score, pageTitle))
-        if score > minPageScore:  # Ignoring very low scored matches.
+        if score > localPrefs.minPageScore:  # Ignoring very low scored matches.
           results.Append(MetadataSearchResult(id = pageId,
                                               name = pageTitle,
                                               year = titleYear,
@@ -584,10 +568,10 @@ class PlexMovieAgent(Agent.Movies):
           itemIndex += 1
         else:
           sendToFineLog('::::::: "%s" page is SKIPPED' % pageTitle)
-        if itemIndex == prefMaxResults:
+        if itemIndex == localPrefs.maxResults:
           break # Got enough matches, stop.
     except:
-      sendToErrorLog('unable to produce WIKI matches!')
+      sendToErrorLog('unable to produce WIKI matches for "%s"!' % str(mediaName))
 
 
   def getDataFromImdb(self, imdbId):
@@ -607,7 +591,7 @@ class PlexMovieAgent(Agent.Movies):
           imdbData['rating'] = rating
         sendToFineLog('  ... IMDB rating: "%s"' % str(rating))
     except:
-      sendToErrorLog('unable to fetch or parse IMDB data.')
+      sendToErrorLog('unable to fetch or parse IMDB data for id %s.' % str(imdbId))
     return imdbData
 
 
@@ -904,32 +888,88 @@ def sendHttpRequest(url):
 
 
 def sendToFinestLog(msg):
-  if wikiRuLogLevel >= 5:
-    sendToLog('FINEST: ' + msg)
+  if localPrefs.logLevel >= 5:
+    if localPrefs.isDebug:
+      print 'FINEST: ' + msg
+    else:
+      Log.Debug(msg)
 
 
 def sendToFineLog(msg):
-  if wikiRuLogLevel >= 4:
-    sendToLog('FINE: ' + msg)
+  if localPrefs.logLevel >= 4:
+    if localPrefs.isDebug:
+      print 'FINE: ' + msg
+    else:
+      Log.Info(msg)
 
 
 def sendToInfoLog(msg):
-  if wikiRuLogLevel >= 3:
-    sendToLog('INFO: ' + msg)
+  if localPrefs.logLevel >= 3:
+    if localPrefs.isDebug:
+      print 'INFO: ' + msg
+    else:
+      Log.Debug(msg)
 
 
 def sendToWarnLog(msg):
-  if wikiRuLogLevel >= 2:
-    sendToLog('WARN: ' + msg)
+  if localPrefs.logLevel >= 2:
+    if localPrefs.isDebug:
+      print 'WARN: ' + msg
+    else:
+      Log.WARN(msg)
 
 
 def sendToErrorLog(msg):
-  if wikiRuLogLevel >= 1:
-    sendToLog('ERROR: ' + msg)
+  if localPrefs.logLevel >= 1:
+    if localPrefs.isDebug:
+      print 'ERROR: ' + msg
+    else:
+      Log.ERROR(msg)
 
-
-def sendToLog(msg):
-  if WIKIRU_IS_DEBUG:
-    print msg
+      
+def readPluginPreferences():
+  prefLogLevel = Prefs[PREF_LOG_LEVEL_NAME]
+  if prefLogLevel == u'ничего':
+    localPrefs.logLevel = 0
+  elif prefLogLevel == u'предупреждения':
+    localPrefs.logLevel = 2
+  elif prefLogLevel == u'информативно':
+    localPrefs.logLevel = 3
+  elif prefLogLevel == u'подробно':
+    localPrefs.logLevel = 4
+  elif prefLogLevel == u'очень подробно':
+    localPrefs.logLevel = 5
   else:
-    Log(msg)
+    localPrefs.logLevel = 1 # Default is error.
+  localPrefs.isDebug = Prefs[PREF_IS_DEBUG_NAME]
+
+  # Setting cache experation time.
+  prefCache = Prefs[PREF_CACHE_TIME_NAME]
+  if prefCache == "1 минута":
+    cacheExp = CACHE_1MINUTE
+  elif prefCache == "1 час":
+    cacheExp = CACHE_1HOUR
+  elif prefCache == "1 день":
+    cacheExp = CACHE_1DAY
+  elif prefCache == "1 неделя":
+    cacheExp = CACHE_1DAY
+  elif prefCache == "1 месяц":
+    cacheExp = CACHE_1MONTH
+  elif prefCache == "1 год":
+    cacheExp = CACHE_1MONTH * 12
+  else:
+    cacheExp = CACHE_1WEEK
+  HTTP.CacheTime = cacheExp
+
+  localPrefs.maxResults = int(Prefs[PREF_MAX_RESULTS_NAME])
+  localPrefs.minPageScore = int(Prefs[PREF_MIN_PAGE_SCORE])
+  localPrefs.ignoreCategories = Prefs[PREF_IGNORE_CATEGORIES_NAME]
+  localPrefs.getAllActors = Prefs[PREF_GET_ALL_ACTORS]
+
+  sendToInfoLog('PREF: Setting debug to %s.' % str(localPrefs.isDebug))
+  sendToInfoLog('PREF: Setting log level to %d (%s).' % (localPrefs.logLevel, prefLogLevel))
+  sendToInfoLog('PREF: Setting cache expiration to %d seconds (%s)' % (cacheExp, prefCache))
+  sendToInfoLog('PREF: WIKI max results is set to %s' % localPrefs.maxResults)
+  sendToInfoLog('PREF: Min page score is set to %s' % localPrefs.minPageScore)
+  sendToInfoLog('PREF: Ignore WIKI categories is set to %s' % str(localPrefs.ignoreCategories))
+  sendToInfoLog('PREF: Parse all actors is set to %s' % str(localPrefs.getAllActors))
