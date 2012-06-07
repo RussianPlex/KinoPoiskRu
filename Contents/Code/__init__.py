@@ -20,6 +20,8 @@ KINOPOISK_SEARCH = 'http://www.kinopoisk.ru/index.php?first=no&kp_query=%s'
 
 # Compiled regex matchers.
 MATCHER_MOVIE_DURATION = re.compile('\s*(\d+).*?', re.UNICODE | re.DOTALL)
+MATCHER_WIDTH_FROM_STYLE = re.compile('.*width\s*:\s*(\d+)px.*', re.UNICODE)
+MATCHER_HEIGHT_FROM_STYLE = re.compile('.*height\s*:\s*(\d+)px.*', re.UNICODE)
 
 SCORE_PENALTY_ITEM_ORDER = 3
 SCORE_PENALTY_YEAR_WRONG = 4
@@ -718,41 +720,37 @@ def parseImageDataFromPhotoTableTag(page, imageDictList):
 def parseImageDataFromAnchorElement(anchorElem, index):
   thumbSizeUrl = None
   fullSizeUrl = None
-  fullSizeWidth = None
-  fullSizeHeight = None
+  fullSizeDimensions = None, None
   fullSizeProxyPageUrl = anchorElem.get('href')
   thumbSizeImgElem = parseXpathElementValue(anchorElem, './img')
   if thumbSizeImgElem is not None:
     thumbSizeUrl = thumbSizeImgElem.get('src')
     if thumbSizeUrl is not None:
       thumbSizeUrl = ensureAbsoluteUrl(thumbSizeUrl)
+
   if fullSizeProxyPageUrl is not None:
     fullSizeProxyPage = XMLElementFromURLWithRetries(ensureAbsoluteUrl(fullSizeProxyPageUrl))
     if fullSizeProxyPage is not None:
       imageElem = parseXpathElementValue(fullSizeProxyPage, '//img[@id="image"]')
       if imageElem is not None:
         fullSizeUrl = imageElem.get('src')
-        fullSizeWidth = imageElem.get('width')
-        fullSizeHeight = imageElem.get('height')
+        fullSizeDimensions = parseImageElemDimensions(imageElem)
 
   # If we have no full size image URL, we could use the thumb's.
   if fullSizeUrl is None and thumbSizeUrl is not None:
       sendToFinestLog('found no full size image, will use the thumbnail')
       fullSizeUrl = thumbSizeUrl
-      fullSizeWidth = thumbSizeUrl.get('width')
-      fullSizeHeight = thumbSizeUrl.get('height')
 
   if fullSizeUrl is None and thumbSizeUrl is None:
     return None
   return {
     'thumbImgUrl': thumbSizeUrl,
     'fullImgUrl': ensureAbsoluteUrl(fullSizeUrl),
-    'fullImgWidth': int(fullSizeWidth),
-    'fullImgHeight': int(fullSizeHeight),
+    'fullImgWidth': fullSizeDimensions[0],
+    'fullImgHeight': fullSizeDimensions[1],
     'index': index,
     'score': 0 # Initial score.
     }
-
 
 def scorePosterResults(imageDictList, isPoster):
   for imageDict in imageDictList:
@@ -901,3 +899,25 @@ def readPluginPreferences():
   sendToInfoLog('PREF: Max poster results is set to %d.' % localPrefs.maxPosters)
   sendToInfoLog('PREF: Max art results is set to %d.' % localPrefs.maxArt)
   sendToInfoLog('PREF: Parse all actors is set to %s.' % str(localPrefs.getAllActors))
+
+
+def parseImageElemDimensions(imageElem):
+  """ Determines dimensions of a given image element and returns it as a (width, height) tuple,
+      where width and height are of type int or None.
+  """
+  style = imageElem.get('style')
+  width = imageElem.get('width')
+  if width is None and style is not None:
+    match = MATCHER_WIDTH_FROM_STYLE.search(style)
+    if match is not None:
+      width = match.groups()[0]
+  height = imageElem.get('height')
+  if height is None and style is not None:
+    match = MATCHER_HEIGHT_FROM_STYLE.search(style)
+    if match is not None:
+      height = match.groups()[0]
+  if width is not None:
+    width = int(width)
+  if height is not None:
+    height = int(height)
+  return width, height
