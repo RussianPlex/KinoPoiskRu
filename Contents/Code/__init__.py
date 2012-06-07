@@ -639,8 +639,11 @@ def parseXpathElementValue(elem, path):
 
 def updateImageMetadata(pages, imageDictList, metadata, maxImages, isPoster):
   # Parsing URLs from the passed pages.
+  maxImagesToParse = maxImages + 2 # Give it a couple of extras to choose from.
   for page in pages:
-    parseImageDataFromPhotoTableTag(page, imageDictList)
+    maxImagesToParse = parseImageDataFromPhotoTableTag(page, imageDictList, maxImagesToParse)
+    if not maxImagesToParse:
+      break
 
   # Sort results according to their score. Сортируем результаты.
   scorePosterResults(imageDictList, isPoster)
@@ -698,7 +701,7 @@ def fetchImageDataPages(urlTemplate, kinoPoiskId, getAllPages):
   return pages
 
 
-def parseImageDataFromPhotoTableTag(page, imageDictList):
+def parseImageDataFromPhotoTableTag(page, imageDictList, maxImagesToParse):
   anchorElems = page.xpath('//table[@class="fotos" or @class="fotos fotos1" or @class="fotos fotos2"]/tr/td/a')
   for anchorElem in anchorElems:
     imageDict = None
@@ -715,6 +718,10 @@ def parseImageDataFromPhotoTableTag(page, imageDictList):
       sendToFinestLog('GOT URLs for an image: index=%d, thumb="%s", full="%s" (%sx%s)' %
           (imageDict['index'], str(imageDict['thumbImgUrl']), str(imageDict['fullImgUrl']),
           str(imageDict['fullImgWidth']), str(imageDict['fullImgHeight'])))
+      maxImagesToParse = maxImagesToParse - 1
+      if not maxImagesToParse:
+        break
+  return maxImagesToParse
 
 
 def parseImageDataFromAnchorElement(anchorElem, index):
