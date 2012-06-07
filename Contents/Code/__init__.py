@@ -491,18 +491,18 @@ def parsePostersInfo(metadata, kinoPoiskId):
   loadAllPages = localPrefs.maxPosters > 20
   posterPages = fetchImageDataPages(KINOPOISK_POSTERS, kinoPoiskId, loadAllPages)
 
-  # Add a thumbnail first (it will get moved down later if more images are found).
-  imageDictList = [{
+  # Thumbnail will be added only if there are no other results.
+  thumb = {
     'thumbImgUrl': None,
     'fullImgUrl': KINOPOISK_MOVIE_THUMBNAIL % kinoPoiskId,
     'fullImgWidth': KINOPOISK_MOVIE_THUMBNAIL_WIDTH,
     'fullImgHeight': KINOPOISK_MOVIE_THUMBNAIL_HEIGHT,
     'index': 0,
     'score': 0 # Initial score.
-  }]
+  }
 
   # Получение URL постеров.
-  updateImageMetadata(posterPages, imageDictList, metadata, localPrefs.maxPosters, True)
+  updateImageMetadata(posterPages, metadata, localPrefs.maxPosters, True, thumb)
 
 
 def parseBackgroundArtInfo(metadata, kinoPoiskId):
@@ -517,7 +517,7 @@ def parseBackgroundArtInfo(metadata, kinoPoiskId):
     return
 
   # Получение урлов задников.
-  updateImageMetadata(artPages, [], metadata, localPrefs.maxArt, False)
+  updateImageMetadata(artPages, metadata, localPrefs.maxArt, False, None)
 
 
 def XMLElementFromURLWithRetries(url):
@@ -637,7 +637,8 @@ def parseXpathElementValue(elem, path):
   return None
 
 
-def updateImageMetadata(pages, imageDictList, metadata, maxImages, isPoster):
+def updateImageMetadata(pages, metadata, maxImages, isPoster, thumb):
+  imageDictList = []
   # Parsing URLs from the passed pages.
   maxImagesToParse = maxImages + 2 # Give it a couple of extras to choose from.
   for page in pages:
@@ -649,7 +650,6 @@ def updateImageMetadata(pages, imageDictList, metadata, maxImages, isPoster):
   scorePosterResults(imageDictList, isPoster)
   imageDictList.sort(key=operator.itemgetter('score'))
   imageDictList.reverse()
-  validNames = []
   if localPrefs.logLevel >= 4:
     sendToInfoLog('image search produced %d results:' % len(imageDictList))
     index = 0
@@ -657,12 +657,17 @@ def updateImageMetadata(pages, imageDictList, metadata, maxImages, isPoster):
       sendToInfoLog(' ... result %d: index="%s", score="%s", URL="%s".' % (index, result['index'], result['score'], result['fullImgUrl']))
       index += 1
 
+  # Thumbnail is added only if there are no other results.
+  if not len(imageDictList) and thumb is not None:
+    imageDictList.append(thumb)
+
   # Now, walk over the top N (<max) results and update metadata.
-  index = 0
   if isPoster:
     imagesContainer = metadata.posters
   else:
     imagesContainer = metadata.art
+  index = 0
+  validNames = list()
   for result in imageDictList:
     fullImgUrl = result['fullImgUrl']
     validNames.append(fullImgUrl)
@@ -671,13 +676,15 @@ def updateImageMetadata(pages, imageDictList, metadata, maxImages, isPoster):
       if thumbImgUrl is None:
         img = fullImgUrl
       else:
-        img = fullImgUrl
-      # NOTE(zhenya): I think sort_order doesn't really matter. :-(
-      imagesContainer[fullImgUrl] = Proxy.Preview(HTTP.Request(img), sort_order = index)
-    index += 1
+        img = thumbImgUrl
+      try:
+        imagesContainer[fullImgUrl] = Proxy.Preview(HTTP.Request(img), sort_order = index)
+        index += 1
+      except:
+        sendToErrorLog(getExceptionInfo('Error generating preview for: "%s".' % str(img)))
     if index >= maxImages:
       break
-    imagesContainer.validate_keys(validNames)
+  imagesContainer.validate_keys(validNames)
 
 
 def fetchImageDataPages(urlTemplate, kinoPoiskId, getAllPages):
