@@ -31,5 +31,11 @@
 	<string>Agent</string>
 	<key>PlexPluginMode</key>
 	<string>AlwaysOn</string>
+
+  <!-- Logging configuration. REMOVE for Release. -->
+  <key>PlexPluginConsoleLogging</key>
+  <string>1</string> <!-- 0 - Off; 1 - On; -->
+  <key>PlexPluginLogLevel</key>
+  <string>Debug</string>  <!-- Critical, Error, Warning, Info, Debug. -->
 </dict>
 </plist>
