@@ -1,27 +1,34 @@
 # -*- coding: utf-8 -*-
-
+#
 # Russian metadata plugin for Plex, which uses http://www.kinopoisk.ru/ to get the tag data.
 # Плагин для обновления информации о фильмах использующий КиноПоиск (http://www.kinopoisk.ru/).
 # Copyright (C) 2012  Zhenya Nyden
-
+#
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
 # as published by the Free Software Foundation; either version 2
 # of the License, or (at your option) any later version.
-
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+#
+# @author ptath
+# @author Stillness-2
+# @author zhenya
+#
 
 import datetime, string, re, time, math, operator, unicodedata, hashlib, urlparse, types, sys
+import common
+
+IS_DEBUG = True # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
 
 ENCODING_KINOPOISK_PAGE = 'cp1251'
-ENCODING_PLEX = 'utf-8'
 
 # Разные страницы сайта.
 KINOPOISK_BASE = 'http://www.kinopoisk.ru/'
@@ -42,10 +49,6 @@ MATCHER_MOVIE_DURATION = re.compile('\s*(\d+).*?', re.UNICODE | re.DOTALL)
 MATCHER_WIDTH_FROM_STYLE = re.compile('.*width\s*:\s*(\d+)px.*', re.UNICODE)
 MATCHER_HEIGHT_FROM_STYLE = re.compile('.*height\s*:\s*(\d+)px.*', re.UNICODE)
 
-SCORE_PENALTY_ITEM_ORDER = 3
-SCORE_PENALTY_YEAR_WRONG = 4
-SCORE_PENALTY_NO_MATCH = 50
-
 IMAGE_SCORE_ITEM_ORDER_BONUS_MAX = 30
 IMAGE_SCORE_RESOLUTION_BONUS_MAX = 20
 IMAGE_SCORE_RATIO_BONUS_MAX = 40
@@ -58,51 +61,32 @@ ART_SCORE_BEST_RATIO = 1.5
 ART_SCORE_MIN_RESOLUTION_PX = 200 * 1000
 ART_SCORE_MAX_RESOLUTION_PX = 1000 * 1000
 
-# Рейтинги.
-DEFAULT_MPAA = u'R'
-MPAA_AGE = {u'G': 0, u'PG': 11, u'PG-13': 13, u'R': 16, u'NC-17': 17}
-
 # Русские месяца, пригодится для определения дат.
 RU_MONTH = {u'января': '01', u'февраля': '02', u'марта': '03', u'апреля': '04', u'мая': '05', u'июня': '06', u'июля': '07', u'августа': '08', u'сентября': '09', u'октября': '10', u'ноября': '11', u'декабря': '12'}
 
-# Под кого маскируемся =).
-USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_2) AppleWebKit/534.51.22 (KHTML, like Gecko) Version/5.1.1 Safari/534.51.22'
 
-# Preference item names.
-PREF_IS_DEBUG_NAME = 'kinopoisk_pref_is_debug'
-PREF_LOG_LEVEL_NAME = 'kinopoisk_pref_log_level'
-PREF_CACHE_TIME_NAME = 'kinopoisk_pref_cache_time'
-PREF_MAX_POSTERS_NAME = 'kinopoisk_pref_max_posters'
-PREF_MAX_ART_NAME = 'kinopoisk_pref_max_art'
-PREF_GET_ALL_ACTORS = 'kinopoisk_pref_get_all_actors'
-PREF_CACHE_TIME_DEFAULT = CACHE_1MONTH
-PREF_MAX_POSTERS_DEFAULT = 6
-PREF_MAX_ART_DEFAULT = 4
-
-
-class LocalSettings():
-  """ These instance variables are populated from plugin preferences. """
-  maxPosters = PREF_MAX_POSTERS_DEFAULT
-  maxArt = PREF_MAX_ART_DEFAULT
-  getAllActors = False
-
-localPrefs = LocalSettings()
+# Plugin preferences.
+# When changing default values here, also update the DefaultPrefs.json file.
+PREFS = common.Preferences(
+  ('kinopoisk_pref_cache_time', CACHE_1MONTH),
+  ('kinopoisk_pref_max_posters', 6),
+  ('kinopoisk_pref_max_art', 4),
+  ('kinopoisk_pref_get_all_actors', False))
 
 
 def Start():
-  Log.Debug('***** START ***** %s' % USER_AGENT)
-  readPluginPreferences()
+  Log.Info('***** START ***** %s' % common.USER_AGENT)
+  PREFS.readPluginPreferences()
 
 
 def ValidatePrefs():
-  readPluginPreferences()
+  Log.Info('***** updating preferences...')
+  PREFS.readPluginPreferences()
 
 
-class PlexMovieAgent(Agent.Movies):
+class KinoPoiskRuAgent(Agent.Movies):
   name = 'KinoPoiskRu'
   languages = [Locale.Language.Russian]
-  accepts_from = ['com.plexapp.agents.localmedia']
-  contributes_to = ['com.plexapp.agents.wikipediaru']
 
   ##############################################################################
   ############################# S E A R C H ####################################
@@ -123,7 +107,7 @@ class PlexMovieAgent(Agent.Movies):
     # Получаем страницу поиска
     Log.Debug('quering kinopoisk...')
 
-    page = XMLElementFromURLWithRetries(KINOPOISK_SEARCH % mediaName.replace(' ', '%20'))
+    page = common.getElementFromHttpRequest(KINOPOISK_SEARCH % mediaName.replace(' ', '%20'), ENCODING_KINOPOISK_PAGE)
     if page is None:
       Log.Warn('nothing was found on kinopoisk for media name "%s"' % mediaName)
     else:
@@ -145,12 +129,12 @@ class PlexMovieAgent(Agent.Movies):
                 kinoPoiskId = match.groups(1)[0]
                 title = divInfoElem.xpath('.//a[contains(@href,"/level/1/film/")]/text()')[0]
                 year = divInfoElem.xpath('.//span[@class="year"]/text()')[0]
-                score = computeTitleScore(mediaName, mediaYear, title, year, itemIndex)
+                score = common.scoreMediaTitleMatch(mediaName, mediaYear, title, year, itemIndex)
                 results.Append(MetadataSearchResult(id=kinoPoiskId, name=title, year=year, lang=lang, score=score))
             else:
               Log.Warn('unable to find film anchor elements for title "%s"' % mediaName)
           except:
-            Log.Error(getExceptionInfo('failed to parse div.info container'))
+            common.logException('failed to parse div.info container')
           itemIndex += 1
       else:
         Log.Warn('nothing was found on kinopoisk for media name "%s"' % mediaName)
@@ -160,18 +144,15 @@ class PlexMovieAgent(Agent.Movies):
           title = page.xpath('//h1[@class="moviename-big"]/text()')[0].strip()
           kinoPoiskId = re.search('\/film\/(.+?)\/', page.xpath('//a[contains(@href,"/level/19/film/")]/attribute::href')[0]).groups(1)[0]
           year = page.xpath('//a[contains(@href,"year")]/text()')[0].strip()
-          score = computeTitleScore(mediaName, mediaYear, title, year, itemIndex)
+          score = common.scoreMediaTitleMatch(mediaName, mediaYear, title, year, itemIndex)
           results.Append(MetadataSearchResult(id=kinoPoiskId, name=title, year=year, lang=lang, score=score))
         except:
-          Log.Error(getExceptionInfo('failed to parse a KinoPoisk page'))
+          common.logException('failed to parse a KinoPoisk page')
 
     # Sort results according to their score (Сортируем результаты).
     results.Sort('score', descending=True)
-#    Log.Debug('search produced %d results:' % len(results))
-#    index = 0
-#    for result in results:
-#      Log.Debug(' ... result %d: id="%s", name="%s", year="%s", score="%d".' % (index, result.id, result.name, str(result.year), result.score))
-#      index += 1
+    if IS_DEBUG:
+      common.printSearchResults(results)
     Log.Debug('SEARCH END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
 
@@ -185,7 +166,7 @@ class PlexMovieAgent(Agent.Movies):
     """
     Log.Debug('UPDATE START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
     part = media.items[0].parts[0]
-    filename = part.file.decode(ENCODING_PLEX)
+    filename = part.file.decode(common.ENCODING_PLEX)
     Log.Debug('filename="%s", guid="%s"' % (filename, metadata.guid))
 
     matcher = re.compile(r'//(\d+)\?')
@@ -202,7 +183,7 @@ class PlexMovieAgent(Agent.Movies):
 
 
   def updateMediaItem(self, metadata, kinoPoiskId):
-    titlePage =  XMLElementFromURLWithRetries(KINOPOISK_TITLE_PAGE_URL % kinoPoiskId)
+    titlePage =  common.getElementFromHttpRequest(KINOPOISK_TITLE_PAGE_URL % kinoPoiskId, ENCODING_KINOPOISK_PAGE)
     if titlePage is not None:
       Log.Debug('got a KinoPoisk page for movie title id: "%s"' % kinoPoiskId)
       try:
@@ -217,7 +198,7 @@ class PlexMovieAgent(Agent.Movies):
         parsePostersInfo(metadata, kinoPoiskId)                                   # Posters. Постеры.
         parseBackgroundArtInfo(metadata, kinoPoiskId)                             # Background art. Задники.
       except:
-        Log.Error(getExceptionInfo('failed to update metadata for id %s' % kinoPoiskId))
+        common.logException('failed to update metadata for id %s' % kinoPoiskId)
 
 
 def parseInfoTableTagAndUpdateMetadata(page, metadata):
@@ -315,11 +296,11 @@ def parseRatingInfo(page, metadata, kinoPoiskId):
       Log.Debug(' ... parsed rating "%s"' % str(rating))
       metadata.rating = rating
     except:
-      Log.Error(getExceptionInfo('unable to parse rating'))
+      common.logException('unable to parse rating')
 
 
 def parseStudioInfo(metadata, kinoPoiskId):
-  page = XMLElementFromURLWithRetries(KINOPOISK_STUDIO % kinoPoiskId)
+  page = common.getElementFromHttpRequest(KINOPOISK_STUDIO % kinoPoiskId, ENCODING_KINOPOISK_PAGE)
   if not page:
     return
   studios = page.xpath(u'//table/tr/td[b="Производство:"]/../following-sibling::tr/td/a/text()')
@@ -347,7 +328,7 @@ def parseYearInfo(infoRowElem, metadata):
     try:
       metadata.year = int(yearText[0])
     except:
-      Log.Error(getExceptionInfo('unable to parse year'))
+      common.logException('unable to parse year')
 
 
 def parseWritersInfo(infoRowElem, metadata):
@@ -402,7 +383,7 @@ def parseDurationInfo(infoRowElem, metadata):
         Log.Debug(' ... parsed duration: "%s"' % str(duration))
         metadata.duration = duration
     except:
-      Log.Error(getExceptionInfo('unable to parse duration'))
+      common.logException('unable to parse duration')
 
 
 def parseOriginallyAvailableInfo(infoRowElem, metadata):
@@ -417,7 +398,7 @@ def parseOriginallyAvailableInfo(infoRowElem, metadata):
       Log.Debug(' ... parsed originally available date: "%s"' % str(originalDate))
       metadata.originally_available_at = originalDate
     except:
-      Log.Error(getExceptionInfo('unable to parse originally available date'))
+      common.logException('unable to parse originally available date')
 
 
 def parsePeoplePageInfo(titlePage, metadata, kinoPoiskId):
@@ -427,13 +408,13 @@ def parsePeoplePageInfo(titlePage, metadata, kinoPoiskId):
       @param actors - actors that are parsed from the main movie title page;
   """
   # First, parse actors from the main title page.
-  parseAllActors = Prefs[PREF_GET_ALL_ACTORS]
+  parseAllActors = PREFS.getAllActors
   actorsMap = parseActorsInfoIntoMap(titlePage)
   mainActors = []
   otherActors = []
 
   # Now, parse a dedicated 'people' page.
-  page = XMLElementFromURLWithRetries(KINOPOISK_PEOPLE % kinoPoiskId)
+  page = common.getElementFromHttpRequest(KINOPOISK_PEOPLE % kinoPoiskId, ENCODING_KINOPOISK_PAGE)
   if page is None:
     Log.Debug('NO people page')
     for actorName in actorsMap.keys():
@@ -482,7 +463,7 @@ def parsePeoplePageInfo(titlePage, metadata, kinoPoiskId):
       else:
         personType = None
     except:
-      Log.Error(getExceptionInfo('unable to parse a people tag'))
+      common.logException('unable to parse a people tag')
 
   # Adding main actors that were found on the 'people' page.
   for personName, roleName in mainActors:
@@ -507,7 +488,7 @@ def parsePostersInfo(metadata, kinoPoiskId):
       Получение адресов постеров.
   """
   Log.Debug('fetching posters for title id "%s"...' % str(kinoPoiskId))
-  loadAllPages = localPrefs.maxPosters > 20
+  loadAllPages = PREFS.maxPosters > 20
   posterPages = fetchImageDataPages(KINOPOISK_POSTERS, kinoPoiskId, loadAllPages)
 
   # Thumbnail will be added only if there are no other results.
@@ -521,7 +502,7 @@ def parsePostersInfo(metadata, kinoPoiskId):
   }
 
   # Получение URL постеров.
-  updateImageMetadata(posterPages, metadata, localPrefs.maxPosters, True, thumb)
+  updateImageMetadata(posterPages, metadata, PREFS.maxPosters, True, thumb)
 
 
 def parseBackgroundArtInfo(metadata, kinoPoiskId):
@@ -529,67 +510,14 @@ def parseBackgroundArtInfo(metadata, kinoPoiskId):
       Получение адресов задников.
   """
   Log.Debug('fetching background art for title id "%s"...' % str(kinoPoiskId))
-  loadAllPages = localPrefs.maxArt > 20
+  loadAllPages = PREFS.maxArt > 20
   artPages = fetchImageDataPages(KINOPOISK_ART, kinoPoiskId, loadAllPages)
   if not len(artPages):
     Log.Debug(' ... determined NO background art URLs')
     return
 
   # Получение урлов задников.
-  updateImageMetadata(artPages, metadata, localPrefs.maxArt, False, None)
-
-
-def XMLElementFromURLWithRetries(url):
-  """ Fetches a given URL and converts it to XML.
-      Функция преобразования html-кода в xml-код.
-  """
-  Log.Debug('requesting URL: "%s"...' % url)
-  res = httpRequest(url)
-  if res is None:
-    return None
-  else:
-    res = str(res).decode(ENCODING_KINOPOISK_PAGE)
-#    Log.Debug(res)
-    return HTML.ElementFromString(res)
-
-
-def computeTitleScore(mediaName, mediaYear, title, year, itemIndex):
-  """ Compares page and media titles taking into consideration
-      media item's year and title values. Returns score [0, 100].
-      Search item scores 100 when:
-        - it's first on the list of KinoPoisk results; AND
-        - it equals to the media title (ignoring case) OR all media title words are found in the search item; AND
-        - search item year equals to media year.
-
-      For now, our title scoring is pretty simple - we check if individual words
-      from media item's title are found in the title from search results.
-      We should also take into consideration order of words, so that "One Two" would not
-      have the same score as "Two One".
-  """
-  Log.Debug('comparing "%s"-%s with "%s"-%s...' % (str(mediaName), str(mediaYear), str(title), str(year)))
-  # Max score is when both title and year match exactly.
-  score = 100
-  if str(mediaYear) != str(year):
-    score = score - SCORE_PENALTY_YEAR_WRONG
-  mediaName = mediaName.lower()
-  title = title.lower()
-  if mediaName != title:
-    # Look for title word matches.
-    words = mediaName.split()
-    wordMatches = 0
-    encodedTitle = title.encode(ENCODING_PLEX)
-    for word in words:
-      # FYI, using '\b' was troublesome (because of string encoding issues, I think).
-      matcher = re.compile('^(|.*[\W«])%s([\W»].*|)$' % word.encode(ENCODING_PLEX), re.UNICODE)
-      if matcher.search(encodedTitle) is not None:
-        wordMatches += 1
-    wordMatchesScore = float(wordMatches) / len(words)
-    score = score - ((float(1) - wordMatchesScore) * SCORE_PENALTY_NO_MATCH)
-
-  # IMPORTANT: always return an int.
-  score = int(score)
-  Log.Debug('***** title scored %d' % score)
-  return score
+  updateImageMetadata(artPages, metadata, PREFS.maxArt, False, None)
 
 
 def resetMediaMetadata(metadata):
@@ -608,20 +536,6 @@ def resetMediaMetadata(metadata):
   metadata.originally_available_at = None
   metadata.original_title = ''
   metadata.duration = None
-
-
-def httpRequest(url):
-  """ Fetches a content given its URL.
-      Функция для получения html-содержимого.
-  """
-  time.sleep(1)
-  for i in range(3):
-    try:
-      return HTTP.Request(url, headers = {'User-agent': USER_AGENT, 'Accept': 'text/html'})
-    except:
-      Log.Error(getExceptionInfo('Error fetching URL: "%s".' % url))
-      time.sleep(1)
-  return None
 
 
 def sanitizeString(msg):
@@ -644,11 +558,6 @@ def ensureAbsoluteUrl(url):
   return KINOPOISK_BASE + url.lstrip('/')
 
 
-def getExceptionInfo(msg):
-  excInfo = sys.exc_info()
-  return '%s; exception: %s; cause: %s' % (msg, excInfo[0], excInfo[1])
-
-
 def parseXpathElementValue(elem, path):
   values = elem.xpath(path)
   if len(values):
@@ -669,11 +578,8 @@ def updateImageMetadata(pages, metadata, maxImages, isPoster, thumb):
   scorePosterResults(imageDictList, isPoster)
   imageDictList.sort(key=operator.itemgetter('score'))
   imageDictList.reverse()
-  Log.Debug('image search produced %d results:' % len(imageDictList))
-#  index = 0
-#  for result in imageDictList:
-#    Log.Debug(' ... result %d: index="%s", score="%s", URL="%s".' % (index, result['index'], result['score'], result['fullImgUrl']))
-#    index += 1
+  if IS_DEBUG:
+    common.printImageSearchResults(imageDictList)
 
   # Thumbnail is added only if there are no other results.
   if not len(imageDictList) and thumb is not None:
@@ -699,7 +605,7 @@ def updateImageMetadata(pages, metadata, maxImages, isPoster, thumb):
         imagesContainer[fullImgUrl] = Proxy.Preview(HTTP.Request(img), sort_order = index)
         index += 1
       except:
-        Log.Error(getExceptionInfo('Error generating preview for: "%s".' % str(img)))
+        common.logException('Error generating preview for: "%s".' % str(img))
     if index >= maxImages:
       break
   imagesContainer.validate_keys(validNames)
@@ -707,7 +613,7 @@ def updateImageMetadata(pages, metadata, maxImages, isPoster, thumb):
 
 def fetchImageDataPages(urlTemplate, kinoPoiskId, getAllPages):
   pages = []
-  page = XMLElementFromURLWithRetries(urlTemplate % (kinoPoiskId, 1))
+  page = common.getElementFromHttpRequest(urlTemplate % (kinoPoiskId, 1), ENCODING_KINOPOISK_PAGE)
   if page is not None:
     pages.append(page)
     if getAllPages:
@@ -718,11 +624,11 @@ def fetchImageDataPages(urlTemplate, kinoPoiskId, getAllPages):
         if match is not None:
           try:
             for pageIndex in range(2, int(match.groups(1)[0]) + 1):
-              page =  XMLElementFromURLWithRetries(urlTemplate % (kinoPoiskId, pageIndex))
+              page =  common.getElementFromHttpRequest(urlTemplate % (kinoPoiskId, pageIndex), ENCODING_KINOPOISK_PAGE)
               if page is not None:
                 pages.append(page)
           except:
-            Log.Error(getExceptionInfo('unable to parse image art page'))
+            common.logException('unable to parse image art page')
   return pages
 
 
@@ -734,7 +640,7 @@ def parseImageDataFromPhotoTableTag(page, imageDictList, maxImagesToParse):
       currItemIndex = len(imageDictList)
       imageDict = parseImageDataFromAnchorElement(anchorElem, currItemIndex)
     except:
-      Log.Error(getExceptionInfo('unable to parse image URLs'))
+      common.logException('unable to parse image URLs')
     if imageDict is None:
       Log.Debug('no URLs - skipping an image')
       continue
@@ -761,7 +667,7 @@ def parseImageDataFromAnchorElement(anchorElem, index):
       thumbSizeUrl = ensureAbsoluteUrl(thumbSizeUrl)
 
   if fullSizeProxyPageUrl is not None:
-    fullSizeProxyPage = XMLElementFromURLWithRetries(ensureAbsoluteUrl(fullSizeProxyPageUrl))
+    fullSizeProxyPage = common.getElementFromHttpRequest(ensureAbsoluteUrl(fullSizeProxyPageUrl), ENCODING_KINOPOISK_PAGE)
     if fullSizeProxyPage is not None:
       imageElem = parseXpathElementValue(fullSizeProxyPage, '//img[@id="image"]')
       if imageElem is not None:
@@ -845,35 +751,6 @@ def scorePosterResults(imageDictList, isPoster):
 
     Log.Debug('--------- SCORE: %d' % int(score))
     imageDict['score'] = int(score)
-
-
-def readPluginPreferences():
-  # Setting cache expiration time.
-  prefCache = Prefs[PREF_CACHE_TIME_NAME]
-  if prefCache == u'1 минута':
-    cacheExp = CACHE_1MINUTE
-  elif prefCache == u'1 час':
-    cacheExp = CACHE_1HOUR
-  elif prefCache == u'1 день':
-    cacheExp = CACHE_1DAY
-  elif prefCache == u'1 неделя':
-    cacheExp = CACHE_1DAY
-  elif prefCache == u'1 месяц':
-    cacheExp = CACHE_1MONTH
-  elif prefCache == u'1 год':
-    cacheExp = CACHE_1MONTH * 12
-  else:
-    cacheExp = PREF_CACHE_TIME_DEFAULT
-  HTTP.CacheTime = cacheExp
-
-  localPrefs.maxPosters = int(Prefs[PREF_MAX_POSTERS_NAME])
-  localPrefs.maxArt = int(Prefs[PREF_MAX_ART_NAME])
-  localPrefs.getAllActors = Prefs[PREF_GET_ALL_ACTORS]
-
-  Log.Debug('PREF: Setting cache expiration to %d seconds (%s).' % (cacheExp, prefCache))
-  Log.Debug('PREF: Max poster results is set to %d.' % localPrefs.maxPosters)
-  Log.Debug('PREF: Max art results is set to %d.' % localPrefs.maxArt)
-  Log.Debug('PREF: Parse all actors is set to %s.' % str(localPrefs.getAllActors))
 
 
 def parseImageElemDimensions(imageElem):
