@@ -49,18 +49,6 @@ MATCHER_MOVIE_DURATION = re.compile('\s*(\d+).*?', re.UNICODE | re.DOTALL)
 MATCHER_WIDTH_FROM_STYLE = re.compile('.*width\s*:\s*(\d+)px.*', re.UNICODE)
 MATCHER_HEIGHT_FROM_STYLE = re.compile('.*height\s*:\s*(\d+)px.*', re.UNICODE)
 
-IMAGE_SCORE_ITEM_ORDER_BONUS_MAX = 30
-IMAGE_SCORE_RESOLUTION_BONUS_MAX = 20
-IMAGE_SCORE_RATIO_BONUS_MAX = 40
-IMAGE_SCORE_THUMB_BONUS = 10
-IMAGE_SCORE_MAX_NUMBER_OF_ITEMS = 5
-POSTER_SCORE_MIN_RESOLUTION_PX = 60 * 1000
-POSTER_SCORE_MAX_RESOLUTION_PX = 600 * 1000
-POSTER_SCORE_BEST_RATIO = 0.7
-ART_SCORE_BEST_RATIO = 1.5
-ART_SCORE_MIN_RESOLUTION_PX = 200 * 1000
-ART_SCORE_MAX_RESOLUTION_PX = 1000 * 1000
-
 # Русские месяца, пригодится для определения дат.
 RU_MONTH = {u'января': '01', u'февраля': '02', u'марта': '03', u'апреля': '04', u'мая': '05', u'июня': '06', u'июля': '07', u'августа': '08', u'сентября': '09', u'октября': '10', u'ноября': '11', u'декабря': '12'}
 
@@ -87,6 +75,11 @@ def ValidatePrefs():
 class KinoPoiskRuAgent(Agent.Movies):
   name = 'KinoPoiskRu'
   languages = [Locale.Language.Russian]
+  primary_provider = True
+  fallback_agent = False
+  accepts_from = None
+  contributes_to = None
+
 
   ##############################################################################
   ############################# S E A R C H ####################################
@@ -394,7 +387,7 @@ def parseOriginallyAvailableInfo(infoRowElem, metadata):
       if len(dd) == 1:
         dd = '0' + dd
       mm = RU_MONTH[mm]
-      originalDate = Datetime.ParseDate(yy+'-'+mm+'-'+dd).date()
+      originalDate = Datetime.ParseDate(yy + '-' + mm + '-' + dd).date()
       Log.Debug(' ... parsed originally available date: "%s"' % str(originalDate))
       metadata.originally_available_at = originalDate
     except:
@@ -405,7 +398,6 @@ def parsePeoplePageInfo(titlePage, metadata, kinoPoiskId):
   """ Parses people - mostly actors - here (on this page)
       we have access to extensive information about all who participated
       creating this movie.
-      @param actors - actors that are parsed from the main movie title page;
   """
   # First, parse actors from the main title page.
   parseAllActors = PREFS.getAllActors
@@ -492,14 +484,12 @@ def parsePostersInfo(metadata, kinoPoiskId):
   posterPages = fetchImageDataPages(KINOPOISK_POSTERS, kinoPoiskId, loadAllPages)
 
   # Thumbnail will be added only if there are no other results.
-  thumb = {
-    'thumbImgUrl': None,
-    'fullImgUrl': KINOPOISK_MOVIE_THUMBNAIL % kinoPoiskId,
-    'fullImgWidth': KINOPOISK_MOVIE_THUMBNAIL_WIDTH,
-    'fullImgHeight': KINOPOISK_MOVIE_THUMBNAIL_HEIGHT,
-    'index': 0,
-    'score': 0 # Initial score.
-  }
+  thumb = common.Thumbnail(None,
+    KINOPOISK_MOVIE_THUMBNAIL % kinoPoiskId,
+    KINOPOISK_MOVIE_THUMBNAIL_WIDTH,
+    KINOPOISK_MOVIE_THUMBNAIL_HEIGHT,
+    0,
+    0) # Initial score.
 
   # Получение URL постеров.
   updateImageMetadata(posterPages, metadata, PREFS.maxPosters, True, thumb)
@@ -566,24 +556,24 @@ def parseXpathElementValue(elem, path):
 
 
 def updateImageMetadata(pages, metadata, maxImages, isPoster, thumb):
-  imageDictList = []
+  thumbnailList = []
   # Parsing URLs from the passed pages.
   maxImagesToParse = maxImages + 2 # Give it a couple of extras to choose from.
   for page in pages:
-    maxImagesToParse = parseImageDataFromPhotoTableTag(page, imageDictList, maxImagesToParse)
+    maxImagesToParse = parseImageDataFromPhotoTableTag(page, thumbnailList, maxImagesToParse)
     if not maxImagesToParse:
       break
 
   # Sort results according to their score. Сортируем результаты.
-  scorePosterResults(imageDictList, isPoster)
-  imageDictList.sort(key=operator.itemgetter('score'))
-  imageDictList.reverse()
+  common.scoreThumbnailResults(thumbnailList, isPoster)
+  sorted(thumbnailList, key=lambda thumbnail: thumbnail.score)
+  thumbnailList.reverse()
   if IS_DEBUG:
-    common.printImageSearchResults(imageDictList)
+    common.printImageSearchResults(thumbnailList)
 
   # Thumbnail is added only if there are no other results.
-  if not len(imageDictList) and thumb is not None:
-    imageDictList.append(thumb)
+  if not len(thumbnailList) and thumb is not None:
+    thumbnailList.append(thumb)
 
   # Now, walk over the top N (<max) results and update metadata.
   if isPoster:
@@ -592,17 +582,15 @@ def updateImageMetadata(pages, metadata, maxImages, isPoster, thumb):
     imagesContainer = metadata.art
   index = 0
   validNames = list()
-  for result in imageDictList:
-    fullImgUrl = result['fullImgUrl']
-    validNames.append(fullImgUrl)
-    if fullImgUrl not in imagesContainer:
-      thumbImgUrl = result['thumbImgUrl']
-      if thumbImgUrl is None:
-        img = fullImgUrl
+  for result in thumbnailList:
+    validNames.append(result.fullImgUrl)
+    if result.fullImgUrl not in imagesContainer:
+      if result.thumbImgUrl is None:
+        img = result.fullImgUrl
       else:
-        img = thumbImgUrl
+        img = result.thumbImgUrl
       try:
-        imagesContainer[fullImgUrl] = Proxy.Preview(HTTP.Request(img), sort_order = index)
+        imagesContainer[result.fullImgUrl] = Proxy.Preview(HTTP.Request(img), sort_order = index)
         index += 1
       except:
         common.logException('Error generating preview for: "%s".' % str(img))
@@ -632,23 +620,23 @@ def fetchImageDataPages(urlTemplate, kinoPoiskId, getAllPages):
   return pages
 
 
-def parseImageDataFromPhotoTableTag(page, imageDictList, maxImagesToParse):
+def parseImageDataFromPhotoTableTag(page, thumbnailList, maxImagesToParse):
   anchorElems = page.xpath('//table[@class="fotos" or @class="fotos fotos1" or @class="fotos fotos2"]/tr/td/a')
   for anchorElem in anchorElems:
-    imageDict = None
+    thumb = None
     try:
-      currItemIndex = len(imageDictList)
-      imageDict = parseImageDataFromAnchorElement(anchorElem, currItemIndex)
+      currItemIndex = len(thumbnailList)
+      thumb = parseImageDataFromAnchorElement(anchorElem, currItemIndex)
     except:
       common.logException('unable to parse image URLs')
-    if imageDict is None:
+    if thumb is None:
       Log.Debug('no URLs - skipping an image')
       continue
     else:
-      imageDictList.append(imageDict)
+      thumbnailList.append(thumb)
       Log.Debug('GOT URLs for an image: index=%d, thumb="%s", full="%s" (%sx%s)' %
-          (imageDict['index'], str(imageDict['thumbImgUrl']), str(imageDict['fullImgUrl']),
-          str(imageDict['fullImgWidth']), str(imageDict['fullImgHeight'])))
+          (thumb.index, str(thumb.thumbImgUrl), str(thumb.fullImgUrl),
+          str(thumb.fullImgWidth), str(thumb.fullImgHeight)))
       maxImagesToParse = maxImagesToParse - 1
       if not maxImagesToParse:
         break
@@ -681,76 +669,12 @@ def parseImageDataFromAnchorElement(anchorElem, index):
 
   if fullSizeUrl is None and thumbSizeUrl is None:
     return None
-  return {
-    'thumbImgUrl': thumbSizeUrl,
-    'fullImgUrl': ensureAbsoluteUrl(fullSizeUrl),
-    'fullImgWidth': fullSizeDimensions[0],
-    'fullImgHeight': fullSizeDimensions[1],
-    'index': index,
-    'score': 0 # Initial score.
-    }
-
-def scorePosterResults(imageDictList, isPoster):
-  for imageDict in imageDictList:
-    Log.Debug('-------Scoring image %sx%s with index %d:\nfull image URL: "%s"\nthumb image URL: %s' %
-                    (str(imageDict['fullImgWidth']), str(imageDict['fullImgHeight']), imageDict['index'], str(imageDict['fullImgUrl']), str(imageDict['thumbImgUrl'])))
-    score = 0
-    fullImgUrl = imageDict['fullImgUrl']
-    if fullImgUrl is None:
-      imageDict['score'] = 0
-      continue
-
-    if imageDict['index'] < IMAGE_SCORE_MAX_NUMBER_OF_ITEMS:
-      # Score bonus from index for items below 10 on the list.
-      bonus = IMAGE_SCORE_ITEM_ORDER_BONUS_MAX * \
-          ((IMAGE_SCORE_MAX_NUMBER_OF_ITEMS - imageDict['index']) / float(IMAGE_SCORE_MAX_NUMBER_OF_ITEMS))
-      Log.Debug('++++ adding order bonus: +%s' % str(bonus))
-      score += bonus
-
-    fullImgWidth = imageDict['fullImgWidth']
-    fullImgHeight = imageDict['fullImgHeight']
-    if fullImgWidth is not None and fullImgHeight is not None:
-      # Get a resolution bonus if width*height is more than a certain min value.
-      if isPoster:
-        minPx = POSTER_SCORE_MIN_RESOLUTION_PX
-        maxPx = POSTER_SCORE_MAX_RESOLUTION_PX
-        bestRatio = POSTER_SCORE_BEST_RATIO
-      else:
-        minPx = ART_SCORE_MIN_RESOLUTION_PX
-        maxPx = ART_SCORE_MAX_RESOLUTION_PX
-        bestRatio = ART_SCORE_BEST_RATIO
-      pixelsCount = fullImgWidth * fullImgHeight
-      if pixelsCount > minPx:
-        if pixelsCount > maxPx:
-          pixelsCount = maxPx
-        bonus = float(IMAGE_SCORE_RESOLUTION_BONUS_MAX) * \
-            float((pixelsCount - minPx)) / float((maxPx - minPx))
-        Log.Debug('++++ adding resolution bonus: +%s' % str(bonus))
-        score += bonus
-      else:
-        Log.Debug('++++ no resolution bonus for %dx%d' % (fullImgWidth, fullImgHeight))
-
-      # Get an orientation (Portrait vs Landscape) bonus. (we prefer images that are have portrait orientation.
-      ratio = fullImgWidth / float(fullImgHeight)
-      radioDiff = math.fabs(bestRatio - ratio)
-      if radioDiff < 0.5:
-        bonus = IMAGE_SCORE_RATIO_BONUS_MAX * (0.5 - radioDiff) * 2.0
-        Log.Debug('++++ adding "%s" ratio bonus: +%s' % (str(ratio), str(bonus)))
-        score += bonus
-      else:
-        # Ignoring Landscape ratios.
-        Log.Debug('++++ no ratio bonus for %dx%d' % (fullImgWidth, fullImgHeight))
-    else:
-      Log.Debug('++++ no size set - no resolution and no ratio bonus')
-
-    # Get a bonus if image has a separate thumbnail URL.
-    thumbImgUrl = imageDict['thumbImgUrl']
-    if thumbImgUrl is not None and fullImgUrl != thumbImgUrl:
-      Log.Debug('++++ adding thumbnail bonus: +%d' % IMAGE_SCORE_THUMB_BONUS)
-      score += IMAGE_SCORE_THUMB_BONUS
-
-    Log.Debug('--------- SCORE: %d' % int(score))
-    imageDict['score'] = int(score)
+  return common.Thumbnail(thumbSizeUrl,
+    ensureAbsoluteUrl(fullSizeUrl),
+    fullSizeDimensions[0],
+    fullSizeDimensions[1],
+    index,
+    0) # Initial score.
 
 
 def parseImageElemDimensions(imageElem):
