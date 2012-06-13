@@ -20,7 +20,7 @@
 #
 # @author ptath
 # @author Stillness-2
-# @author zhenya
+# @author zhenya (Yevgeny Nyden)
 #
 
 import datetime, string, re, time, math, operator, unicodedata, hashlib, urlparse, types, sys
@@ -56,10 +56,11 @@ RU_MONTH = {u'января': '01', u'февраля': '02', u'марта': '03',
 # Plugin preferences.
 # When changing default values here, also update the DefaultPrefs.json file.
 PREFS = common.Preferences(
-  ('kinopoisk_pref_cache_time', CACHE_1MONTH),
+  ('kinopoisk_pref_image_choice', common.IMAGE_CHOICE_BEST),
   ('kinopoisk_pref_max_posters', 6),
   ('kinopoisk_pref_max_art', 4),
-  ('kinopoisk_pref_get_all_actors', False))
+  ('kinopoisk_pref_get_all_actors', False),
+  ('kinopoisk_pref_cache_time', CACHE_1MONTH))
 
 
 def Start():
@@ -96,7 +97,8 @@ class KinoPoiskRuAgent(Agent.Movies):
     mediaYear = media.year
     Log.Debug('searching for name="%s", year="%s", guid="%s", hash="%s"...' %
         (str(mediaName), str(mediaYear), str(media.guid), str(media.hash)))
-
+    if manual:
+      Log.Debug('manual updated is forced!')
     # Получаем страницу поиска
     Log.Debug('quering kinopoisk...')
 
@@ -188,8 +190,13 @@ class KinoPoiskRuAgent(Agent.Movies):
         parseInfoTableTagAndUpdateMetadata(titlePage, metadata)
         parseStudioInfo(metadata, kinoPoiskId)                                    # Studio. Студия.
         parsePeoplePageInfo(titlePage, metadata, kinoPoiskId)                     # Actors, etc. Актёры. др.
-        parsePostersInfo(metadata, kinoPoiskId)                                   # Posters. Постеры.
-        parseBackgroundArtInfo(metadata, kinoPoiskId)                             # Background art. Задники.
+        if PREFS.imageChoice != common.IMAGE_CHOICE_NOTHING:
+          parsePostersInfo(metadata, kinoPoiskId)                                 # Posters. Постеры.
+          parseBackgroundArtInfo(metadata, kinoPoiskId)                           # Background art. Задники.
+        else:
+          Log.Debug(' ... skipping parsing image art.')
+          metadata.posters.validate_keys([])
+          metadata.art.validate_keys([])
       except:
         common.logException('failed to update metadata for id %s' % kinoPoiskId)
 
@@ -483,7 +490,7 @@ def parsePostersInfo(metadata, kinoPoiskId):
   loadAllPages = PREFS.maxPosters > 20
   posterPages = fetchImageDataPages(KINOPOISK_POSTERS, kinoPoiskId, loadAllPages)
 
-  # Thumbnail will be added only if there are no other results.
+  # Thumbnail might be added if there are no other results.
   thumb = common.Thumbnail(None,
     KINOPOISK_MOVIE_THUMBNAIL % kinoPoiskId,
     KINOPOISK_MOVIE_THUMBNAIL_WIDTH,
@@ -558,22 +565,27 @@ def parseXpathElementValue(elem, path):
 def updateImageMetadata(pages, metadata, maxImages, isPoster, thumb):
   thumbnailList = []
   # Parsing URLs from the passed pages.
-  maxImagesToParse = maxImages + 2 # Give it a couple of extras to choose from.
+  maxImagesToParse = maxImages + 2  # Give it a couple of extras to choose from.
   for page in pages:
-    maxImagesToParse = parseImageDataFromPhotoTableTag(page, thumbnailList, maxImagesToParse)
+    maxImagesToParse = parseImageDataFromPhotoTableTag(page, thumbnailList, isPoster, maxImagesToParse)
     if not maxImagesToParse:
       break
 
-  # Sort results according to their score. Сортируем результаты.
-  common.scoreThumbnailResults(thumbnailList, isPoster)
-  sorted(thumbnailList, key=lambda thumbnail: thumbnail.score)
-  thumbnailList.reverse()
+  # Thumbnail is added only if there are no other results.
+  if not len(thumbnailList):
+    if PREFS.imageChoice == common.IMAGE_CHOICE_ALL and thumb is not None:
+      thumbnailList.append(thumb)
+  else:
+    print ':::::::::::::::::::::::::::: BEFORE '
+    for item in thumbnailList:
+      print ' . . . . . ' + str(item.fullImgUrl) + ' - ' + str(item.score)
+    # Sort results according to their score and chop out extraneous images. Сортируем результаты.
+    thumbnailList = sorted(thumbnailList, key=lambda t : t.score, reverse=True)[0:maxImages]
+    print '::::::::::::::::::::::::::::: AFTER '
+    for item in thumbnailList:
+      print ' . . . . . ' + str(item.fullImgUrl) + ' - ' + str(item.score)
   if IS_DEBUG:
     common.printImageSearchResults(thumbnailList)
-
-  # Thumbnail is added only if there are no other results.
-  if not len(thumbnailList) and thumb is not None:
-    thumbnailList.append(thumb)
 
   # Now, walk over the top N (<max) results and update metadata.
   if isPoster:
@@ -583,19 +595,17 @@ def updateImageMetadata(pages, metadata, maxImages, isPoster, thumb):
   index = 0
   validNames = list()
   for result in thumbnailList:
-    validNames.append(result.fullImgUrl)
     if result.fullImgUrl not in imagesContainer:
       if result.thumbImgUrl is None:
         img = result.fullImgUrl
       else:
         img = result.thumbImgUrl
       try:
+        validNames.append(result.fullImgUrl)
         imagesContainer[result.fullImgUrl] = Proxy.Preview(HTTP.Request(img), sort_order = index)
         index += 1
       except:
         common.logException('Error generating preview for: "%s".' % str(img))
-    if index >= maxImages:
-      break
   imagesContainer.validate_keys(validNames)
 
 
@@ -620,19 +630,27 @@ def fetchImageDataPages(urlTemplate, kinoPoiskId, getAllPages):
   return pages
 
 
-def parseImageDataFromPhotoTableTag(page, thumbnailList, maxImagesToParse):
+def parseImageDataFromPhotoTableTag(page, thumbnailList, isPoster, maxImagesToParse):
   anchorElems = page.xpath('//table[@class="fotos" or @class="fotos fotos1" or @class="fotos fotos2"]/tr/td/a')
+  currItemIndex = len(thumbnailList)
   for anchorElem in anchorElems:
     thumb = None
     try:
-      currItemIndex = len(thumbnailList)
       thumb = parseImageDataFromAnchorElement(anchorElem, currItemIndex)
+      currItemIndex += 1
     except:
       common.logException('unable to parse image URLs')
     if thumb is None:
       Log.Debug('no URLs - skipping an image')
       continue
     else:
+      common.scoreThumbnailResult(thumb, isPoster)
+      print '------------------------ checked image ' + thumb.fullImgUrl + ' -> ' + str(thumb.score)
+      if PREFS.imageChoice == common.IMAGE_CHOICE_BEST and \
+         thumb.score < common.IMAGE_SCORE_BEST_THRESHOLD:
+        print ' - - - - - - - - - SKIPPING'
+        continue
+      print ' - - - - - - - - - ADDING'
       thumbnailList.append(thumb)
       Log.Debug('GOT URLs for an image: index=%d, thumb="%s", full="%s" (%sx%s)' %
           (thumb.index, str(thumb.thumbImgUrl), str(thumb.fullImgUrl),
