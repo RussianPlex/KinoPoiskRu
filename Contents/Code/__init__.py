@@ -23,7 +23,7 @@
 # @author zhenya (Yevgeny Nyden)
 #
 
-import datetime, string, re, time, math, operator, unicodedata, hashlib, urlparse, types, sys
+import datetime, string, re, time, math, operator, unicodedata, hashlib
 import common
 
 IS_DEBUG = True # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
@@ -97,8 +97,6 @@ class KinoPoiskRuAgent(Agent.Movies):
     mediaYear = media.year
     Log.Debug('searching for name="%s", year="%s", guid="%s", hash="%s"...' %
         (str(mediaName), str(mediaYear), str(media.guid), str(media.hash)))
-    if manual:
-      Log.Debug('manual updated is forced!')
     # Получаем страницу поиска
     Log.Debug('quering kinopoisk...')
 
@@ -198,7 +196,7 @@ class KinoPoiskRuAgent(Agent.Movies):
           metadata.posters.validate_keys([])
           metadata.art.validate_keys([])
       except:
-        common.logException('failed to update metadata for id %s' % kinoPoiskId)
+        common.logException('failed to update metadata for id %s' % kinoPoi1234skId)
 
 
 def parseInfoTableTagAndUpdateMetadata(page, metadata):
@@ -576,14 +574,8 @@ def updateImageMetadata(pages, metadata, maxImages, isPoster, thumb):
     if PREFS.imageChoice == common.IMAGE_CHOICE_ALL and thumb is not None:
       thumbnailList.append(thumb)
   else:
-    print ':::::::::::::::::::::::::::: BEFORE '
-    for item in thumbnailList:
-      print ' . . . . . ' + str(item.fullImgUrl) + ' - ' + str(item.score)
     # Sort results according to their score and chop out extraneous images. Сортируем результаты.
     thumbnailList = sorted(thumbnailList, key=lambda t : t.score, reverse=True)[0:maxImages]
-    print '::::::::::::::::::::::::::::: AFTER '
-    for item in thumbnailList:
-      print ' . . . . . ' + str(item.fullImgUrl) + ' - ' + str(item.score)
   if IS_DEBUG:
     common.printImageSearchResults(thumbnailList)
 
@@ -595,17 +587,16 @@ def updateImageMetadata(pages, metadata, maxImages, isPoster, thumb):
   index = 0
   validNames = list()
   for result in thumbnailList:
-    if result.fullImgUrl not in imagesContainer:
-      if result.thumbImgUrl is None:
-        img = result.fullImgUrl
-      else:
-        img = result.thumbImgUrl
-      try:
-        validNames.append(result.fullImgUrl)
-        imagesContainer[result.fullImgUrl] = Proxy.Preview(HTTP.Request(img), sort_order = index)
-        index += 1
-      except:
-        common.logException('Error generating preview for: "%s".' % str(img))
+    if result.thumbImgUrl is None:
+      img = result.fullImgUrl
+    else:
+      img = result.thumbImgUrl
+    validNames.append(result.fullImgUrl)
+    try:
+      imagesContainer[result.fullImgUrl] = Proxy.Preview(HTTP.Request(img), sort_order = index)
+      index += 1
+    except:
+      common.logException('Error generating preview for: "%s".' % str(img))
   imagesContainer.validate_keys(validNames)
 
 
@@ -645,12 +636,9 @@ def parseImageDataFromPhotoTableTag(page, thumbnailList, isPoster, maxImagesToPa
       continue
     else:
       common.scoreThumbnailResult(thumb, isPoster)
-      print '------------------------ checked image ' + thumb.fullImgUrl + ' -> ' + str(thumb.score)
       if PREFS.imageChoice == common.IMAGE_CHOICE_BEST and \
          thumb.score < common.IMAGE_SCORE_BEST_THRESHOLD:
-        print ' - - - - - - - - - SKIPPING'
         continue
-      print ' - - - - - - - - - ADDING'
       thumbnailList.append(thumb)
       Log.Debug('GOT URLs for an image: index=%d, thumb="%s", full="%s" (%sx%s)' %
           (thumb.index, str(thumb.thumbImgUrl), str(thumb.fullImgUrl),
