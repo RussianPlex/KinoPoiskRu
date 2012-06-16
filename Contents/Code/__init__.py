@@ -108,6 +108,7 @@ class KinoPoiskRuAgent(Agent.Movies):
       Log.Debug('got a kinopoisk page to parse...')
       divInfoElems = page.xpath('//self::div[@class="info"]/p[@class="name"]/a[contains(@href,"/level/1/film/")]/..')
       itemIndex = 0
+      altTitle = None
       if len(divInfoElems):
         Log.Debug('found %d results' % len(divInfoElems))
         for divInfoElem in divInfoElems:
@@ -122,7 +123,15 @@ class KinoPoiskRuAgent(Agent.Movies):
                 kinoPoiskId = match.groups(1)[0]
                 title = divInfoElem.xpath('.//a[contains(@href,"/level/1/film/")]/text()')[0]
                 year = divInfoElem.xpath('.//span[@class="year"]/text()')[0]
-                score = common.scoreMediaTitleMatch(mediaName, mediaYear, title, year, itemIndex)
+
+                # Try to parse the alternative (original) title. Ignore failures.
+                # This is a <span> below the title <a> tag.
+                try:
+                  altTitle = divInfoElem.xpath('../span[1]/text()')[0]
+                  altTitle = altTitle.split(',')[0].strip()
+                except:
+                  pass
+                score = common.scoreMediaTitleMatch(mediaName, mediaYear, title, altTitle, year, itemIndex)
                 results.Append(MetadataSearchResult(id=kinoPoiskId, name=title, year=year, lang=lang, score=score))
             else:
               Log.Warn('unable to find film anchor elements for title "%s"' % mediaName)
@@ -131,13 +140,13 @@ class KinoPoiskRuAgent(Agent.Movies):
           itemIndex += 1
       else:
         Log.Warn('nothing was found on kinopoisk for media name "%s"' % mediaName)
-        # TODO(zhenya): investigate whether we need this clause at all (haven't seen this happening).
+        # TODO(zhenya): investigate 1 we need this clause at all (haven't seen this happening).
         # Если не нашли там текст названия, значит сайт сразу дал нам страницу с фильмом (хочется верить =)
         try:
           title = page.xpath('//h1[@class="moviename-big"]/text()')[0].strip()
           kinoPoiskId = re.search('\/film\/(.+?)\/', page.xpath('//a[contains(@href,"/level/19/film/")]/attribute::href')[0]).groups(1)[0]
           year = page.xpath('//a[contains(@href,"year")]/text()')[0].strip()
-          score = common.scoreMediaTitleMatch(mediaName, mediaYear, title, year, itemIndex)
+          score = common.scoreMediaTitleMatch(mediaName, mediaYear, title, altTitle, year, itemIndex)
           results.Append(MetadataSearchResult(id=kinoPoiskId, name=title, year=year, lang=lang, score=score))
         except:
           common.logException('failed to parse a KinoPoisk page')
@@ -193,8 +202,8 @@ class KinoPoiskRuAgent(Agent.Movies):
           parseBackgroundArtInfo(metadata, kinoPoiskId)                           # Background art. Задники.
         else:
           Log.Debug(' ... skipping parsing image art.')
-          metadata.posters.validate_keys([])
-          metadata.art.validate_keys([])
+#          metadata.posters.validate_keys([])
+#          metadata.art.validate_keys([])
       except:
         common.logException('failed to update metadata for id %s' % kinoPoi1234skId)
 
