@@ -22,11 +22,21 @@
 # @author Stillness-2
 # @author zhenya (Yevgeny Nyden)
 #
+# @version @PLUGIN.REVISION@
+# @revision @REPOSITORY.REVISION@
 
 import datetime, string, re, time, math, operator, unicodedata, hashlib
 import common
 
-IS_DEBUG = True # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
+IS_DEBUG = False # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
+
+# Default plugin preferences. When modifying, please also change
+# corresponding values in the ../DefaultPrefs.json file.
+KINOPOISK_PREF_DEFAULT_IMAGE_CHOICE = common.IMAGE_CHOICE_BEST
+KINOPOISK_PREF_DEFAULT_MAX_POSTERS = 4
+KINOPOISK_PREF_DEFAULT_MAX_ART = 4
+KINOPOISK_PREF_DEFAULT_GET_ALL_ACTORS = False
+KINOPOISK_PREF_DEFAULT_CACHE_TIME = CACHE_1MONTH
 
 ENCODING_KINOPOISK_PAGE = 'cp1251'
 
@@ -56,11 +66,11 @@ RU_MONTH = {u'января': '01', u'февраля': '02', u'марта': '03',
 # Plugin preferences.
 # When changing default values here, also update the DefaultPrefs.json file.
 PREFS = common.Preferences(
-  ('kinopoisk_pref_image_choice', common.IMAGE_CHOICE_BEST),
-  ('kinopoisk_pref_max_posters', 6),
-  ('kinopoisk_pref_max_art', 4),
-  ('kinopoisk_pref_get_all_actors', False),
-  ('kinopoisk_pref_cache_time', CACHE_1MONTH))
+  ('kinopoisk_pref_image_choice', KINOPOISK_PREF_DEFAULT_IMAGE_CHOICE),
+  ('kinopoisk_pref_max_posters', KINOPOISK_PREF_DEFAULT_MAX_POSTERS),
+  ('kinopoisk_pref_max_art', KINOPOISK_PREF_DEFAULT_MAX_ART),
+  ('kinopoisk_pref_get_all_actors', KINOPOISK_PREF_DEFAULT_GET_ALL_ACTORS),
+  ('kinopoisk_pref_cache_time', KINOPOISK_PREF_DEFAULT_CACHE_TIME))
 
 
 def Start():
@@ -97,6 +107,7 @@ class KinoPoiskRuAgent(Agent.Movies):
     mediaYear = media.year
     Log.Debug('searching for name="%s", year="%s", guid="%s", hash="%s"...' %
         (str(mediaName), str(mediaYear), str(media.guid), str(media.hash)))
+
     # Получаем страницу поиска
     Log.Debug('quering kinopoisk...')
 
