@@ -26,7 +26,7 @@
 # @revision @REPOSITORY.REVISION@
 
 import datetime, string, re, time, math, operator, unicodedata, hashlib
-import common
+import common, tmdb
 
 IS_DEBUG = False # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
 
@@ -36,6 +36,7 @@ KINOPOISK_PREF_DEFAULT_IMAGE_CHOICE = common.IMAGE_CHOICE_BEST
 KINOPOISK_PREF_DEFAULT_MAX_POSTERS = 4
 KINOPOISK_PREF_DEFAULT_MAX_ART = 4
 KINOPOISK_PREF_DEFAULT_GET_ALL_ACTORS = False
+KINOPOISK_PREF_DEFAULT_IMDB_SUPPORT = True
 KINOPOISK_PREF_DEFAULT_CACHE_TIME = CACHE_1MONTH
 
 ENCODING_KINOPOISK_PAGE = 'cp1251'
@@ -70,6 +71,7 @@ PREFS = common.Preferences(
   ('kinopoisk_pref_max_posters', KINOPOISK_PREF_DEFAULT_MAX_POSTERS),
   ('kinopoisk_pref_max_art', KINOPOISK_PREF_DEFAULT_MAX_ART),
   ('kinopoisk_pref_get_all_actors', KINOPOISK_PREF_DEFAULT_GET_ALL_ACTORS),
+  ('kinopoisk_pref_imdb_support', KINOPOISK_PREF_DEFAULT_IMDB_SUPPORT),
   ('kinopoisk_pref_cache_time', KINOPOISK_PREF_DEFAULT_CACHE_TIME))
 
 
@@ -192,6 +194,11 @@ class KinoPoiskRuAgent(Agent.Movies):
     Log.Debug('parsed KinoPoisk movie title id: "%s"' % kinoPoiskId)
 
     self.updateMediaItem(metadata, kinoPoiskId)
+
+    if PREFS.imdbSupport:
+      imdbId = tmdb.findBestTitleMatch(metadata.title, metadata.year, lang)
+      if imdbId is not None:
+        metadata.id = imdbId
     Log.Debug('UPDATE END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
 

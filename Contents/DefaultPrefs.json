@@ -27,6 +27,12 @@
 		"default":	"false"
 	},
   {
+	  "id": "kinopoisk_pref_imdb_support",
+		"label": "Поддержка IMDB",
+		"type": "bool",
+		"default":	"true"
+	},
+  {
     "id": "kinopoisk_pref_cache_time",
     "label": "Кэширование веб-данных",
     "type": "enum",
