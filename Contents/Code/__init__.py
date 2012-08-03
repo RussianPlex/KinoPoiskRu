@@ -220,8 +220,8 @@ class KinoPoiskRuAgent(Agent.Movies):
           parseBackgroundArtInfo(metadata, kinoPoiskId)                           # Background art. Задники.
         else:
           Log.Debug(' ... skipping parsing image art.')
-#          metadata.posters.validate_keys([])
-#          metadata.art.validate_keys([])
+          metadata.posters.validate_keys([])
+          metadata.art.validate_keys([])
       except:
         common.logException('failed to update metadata for id %s' % kinoPoiskId)
 
