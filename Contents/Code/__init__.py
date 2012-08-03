@@ -295,7 +295,8 @@ def parseActorsInfoIntoMap(page):
   actors = page.xpath('//td[@class="actor_list"]/div/span')
   Log.Debug(' ... parsed %d actor tags' % len(actors))
   for actorSpanTag in actors:
-    actorList = actorSpanTag.xpath('./a[contains(@href,"/level/4/people/")]/text()')
+#    actorList = actorSpanTag.xpath('./a[contains(@href,"/level/4/people/")]/text()')
+    actorList = actorSpanTag.xpath('./a/text()')
     if len(actorList):
       for actor in actorList:
         if actor != u'...':
