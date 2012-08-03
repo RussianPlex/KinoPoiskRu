@@ -315,7 +315,7 @@ def parseSummaryInfo(page, metadata):
 
 
 def parseRatingInfo(page, metadata, kinoPoiskId):
-  ratingText = page.xpath('//form[@class="rating_stars"]/div[@id="block_rating"]//a[@href="/level/83/film/' + kinoPoiskId + '/"]/span/text()')
+  ratingText = page.xpath('.//*[@id="block_rating"]/div[1]/div[1]/a/span[1]/text()')
   if len(ratingText):
     try:
       rating = float(ratingText[0])
