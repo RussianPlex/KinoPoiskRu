@@ -223,7 +223,7 @@ class KinoPoiskRuAgent(Agent.Movies):
 #          metadata.posters.validate_keys([])
 #          metadata.art.validate_keys([])
       except:
-        common.logException('failed to update metadata for id %s' % kinoPoi1234skId)
+        common.logException('failed to update metadata for id %s' % kinoPoiskId)
 
 
 def parseInfoTableTagAndUpdateMetadata(page, metadata):
@@ -589,16 +589,18 @@ def parseXpathElementValue(elem, path):
 
 def updateImageMetadata(pages, metadata, maxImages, isPoster, thumb):
   thumbnailList = []
-  # Parsing URLs from the passed pages.
-  maxImagesToParse = maxImages + 2  # Give it a couple of extras to choose from.
-  for page in pages:
-    maxImagesToParse = parseImageDataFromPhotoTableTag(page, thumbnailList, isPoster, maxImagesToParse)
-    if not maxImagesToParse:
-      break
+  if PREFS.imageChoice != common.IMAGE_CHOICE_THUMB_ONLY or not isPoster:
+    # Parsing URLs from the passed pages.
+    maxImagesToParse = maxImages + 2  # Give it a couple of extras to choose from.
+    for page in pages:
+      maxImagesToParse = parseImageDataFromPhotoTableTag(page, thumbnailList, isPoster, maxImagesToParse)
+      if not maxImagesToParse:
+        break
 
-  # Thumbnail is added only if there are no other results.
+  # Thumbnail is added only if there are no other results or only thumb is requested.
   if not len(thumbnailList):
-    if PREFS.imageChoice == common.IMAGE_CHOICE_ALL and thumb is not None:
+    if thumb is not None and \
+        (PREFS.imageChoice == common.IMAGE_CHOICE_ALL or PREFS.imageChoice == common.IMAGE_CHOICE_THUMB_ONLY):
       thumbnailList.append(thumb)
   else:
     # Sort results according to their score and chop out extraneous images. Сортируем результаты.
@@ -618,9 +620,9 @@ def updateImageMetadata(pages, metadata, maxImages, isPoster, thumb):
       img = result.fullImgUrl
     else:
       img = result.thumbImgUrl
-    validNames.append(result.fullImgUrl)
     try:
       imagesContainer[result.fullImgUrl] = Proxy.Preview(HTTP.Request(img), sort_order = index)
+      validNames.append(result.fullImgUrl)
       index += 1
     except:
       common.logException('Error generating preview for: "%s".' % str(img))
