@@ -157,7 +157,7 @@ class KinoPoiskRuAgent(Agent.Movies):
         # Если не нашли там текст названия, значит сайт сразу дал нам страницу с фильмом (хочется верить =)
         try:
           title = page.xpath('//h1[@class="moviename-big"]/text()')[0].strip()
-          kinoPoiskId = re.search('\/film\/(.+?)\/', page.xpath('//a[contains(@href,"/level/19/film/")]/attribute::href')[0]).groups(1)[0]
+          kinoPoiskId = re.search('\/film\/(.+?)\/', page.xpath('.//link[contains(@href, "/film/")]/attribute::href')[0]).groups(0)[0]
           year = page.xpath('//a[contains(@href,"year")]/text()')[0].strip()
           score = common.scoreMediaTitleMatch(mediaName, mediaYear, title, altTitle, year, itemIndex)
           results.Append(MetadataSearchResult(id=kinoPoiskId, name=title, year=year, lang=lang, score=score))
