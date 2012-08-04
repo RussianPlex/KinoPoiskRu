@@ -134,14 +134,14 @@ class KinoPoiskRuAgent(Agent.Movies):
                 Log.Error('unable to parse movie title id')
               else:
                 kinoPoiskId = match.groups(1)[0]
-                title = divInfoElem.xpath('.//a[contains(@href,"/level/1/film/")]/text()')[0]
-                year = divInfoElem.xpath('.//span[@class="year"]/text()')[0]
-
+                title = common.getXpathRequiredNode(divInfoElem, './/a[contains(@href,"/level/1/film/")]/text()')
+                year = common.getXpathOptionalNode(divInfoElem, './/span[@class="year"]/text()')
                 # Try to parse the alternative (original) title. Ignore failures.
                 # This is a <span> below the title <a> tag.
                 try:
-                  altTitle = divInfoElem.xpath('../span[1]/text()')[0]
-                  altTitle = altTitle.split(',')[0].strip()
+                  altTitle = common.getXpathOptionalNode(divInfoElem, '../span[1]/text()')
+                  if altTitle is not None:
+                    altTitle = altTitle.split(',')[0].strip()
                 except:
                   pass
                 score = common.scoreMediaTitleMatch(mediaName, mediaYear, title, altTitle, year, itemIndex)
