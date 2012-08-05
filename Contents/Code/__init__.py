@@ -42,15 +42,19 @@ KINOPOISK_PREF_DEFAULT_CACHE_TIME = CACHE_1MONTH
 ENCODING_KINOPOISK_PAGE = 'cp1251'
 
 # Разные страницы сайта.
-KINOPOISK_BASE = 'http://www.kinopoisk.ru/'
-KINOPOISK_TITLE_PAGE_URL = KINOPOISK_BASE + 'level/1/film/%s/'
-KINOPOISK_PEOPLE = KINOPOISK_BASE + 'level/19/film/%s/'
-KINOPOISK_STUDIO = KINOPOISK_BASE + 'level/91/film/%s/'
-KINOPOISK_POSTERS = KINOPOISK_BASE + 'level/17/film/%s/page/%d/'
-KINOPOISK_ART = KINOPOISK_BASE + 'level/13/film/%s/page/%d/'
-KINOPOISK_MOVIE_THUMBNAIL = 'http://st.kinopoisk.ru/images/film/%s.jpg'
+KINOPOISK_SITE_BASE = 'http://www.kinopoisk.ru/'
+KINOPOISK_RESOURCE_BASE = 'http://st.kinopoisk.ru/'
+KINOPOISK_TITLE_PAGE_URL = KINOPOISK_SITE_BASE + 'level/1/film/%s/'
+KINOPOISK_PEOPLE = KINOPOISK_SITE_BASE + 'level/19/film/%s/'
+KINOPOISK_STUDIO = KINOPOISK_SITE_BASE + 'level/91/film/%s/'
+KINOPOISK_POSTERS = KINOPOISK_SITE_BASE + 'level/17/film/%s/page/%d/'
+KINOPOISK_ART = KINOPOISK_SITE_BASE + 'level/13/film/%s/page/%d/'
+KINOPOISK_MOVIE_THUMBNAIL = KINOPOISK_RESOURCE_BASE + 'images/film/%s.jpg'
+KINOPOISK_MOVIE_BIG_THUMBNAIL = KINOPOISK_RESOURCE_BASE + 'images/film_big/%s.jpg'
 KINOPOISK_MOVIE_THUMBNAIL_WIDTH = 130
 KINOPOISK_MOVIE_THUMBNAIL_HEIGHT = 168
+KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_WIDTH = 400
+KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_HEIGHT = 600
 
 # Страница поиска.
 KINOPOISK_SEARCH = 'http://www.kinopoisk.ru/index.php?first=no&kp_query=%s'
@@ -516,13 +520,9 @@ def parsePostersInfo(metadata, kinoPoiskId):
   loadAllPages = PREFS.maxPosters > 20
   posterPages = fetchImageDataPages(KINOPOISK_POSTERS, kinoPoiskId, loadAllPages)
 
-  # Thumbnail might be added if there are no other results.
-  thumb = common.Thumbnail(None,
-    KINOPOISK_MOVIE_THUMBNAIL % kinoPoiskId,
-    KINOPOISK_MOVIE_THUMBNAIL_WIDTH,
-    KINOPOISK_MOVIE_THUMBNAIL_HEIGHT,
-    0,
-    0) # Initial score.
+  thumb = None
+  if PREFS.imageChoice != common.IMAGE_CHOICE_NOTHING:
+    thumb = getPosterThumbnailBigOrSmall(kinoPoiskId)
 
   # Получение URL постеров.
   updateImageMetadata(posterPages, metadata, PREFS.maxPosters, True, thumb)
@@ -578,7 +578,7 @@ def ensureAbsoluteUrl(url):
   url = url.strip()
   if url[0:4] == 'http':
     return url
-  return KINOPOISK_BASE + url.lstrip('/')
+  return KINOPOISK_SITE_BASE + url.lstrip('/')
 
 
 def parseXpathElementValue(elem, path):
@@ -733,3 +733,33 @@ def parseImageElemDimensions(imageElem):
   if height is not None:
     height = int(height)
   return width, height
+
+
+def getPosterThumbnailBigOrSmall(kinoPoiskId):
+  thumb = None
+  try:
+    bigImgThumbUrl = KINOPOISK_MOVIE_BIG_THUMBNAIL % kinoPoiskId
+    response = common.getResponseFromHttpRequest(bigImgThumbUrl)
+    if response is not None:
+      contentType = response.headers['content-type']
+      Log.Debug(' *** film_big response content type: "%s"' % str(contentType))
+      if 'image/jpeg' == contentType:
+        thumb = common.Thumbnail(None,
+          bigImgThumbUrl,
+          KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_WIDTH,
+          KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_HEIGHT,
+          0, # Index.
+          1000) # Big thumb should have the highest initial score.
+  except:
+    pass
+
+  if thumb is None:
+    # If there is no big title, add a small one.
+    thumb = common.Thumbnail(None,
+      KINOPOISK_MOVIE_THUMBNAIL % kinoPoiskId,
+      KINOPOISK_MOVIE_THUMBNAIL_WIDTH,
+      KINOPOISK_MOVIE_THUMBNAIL_HEIGHT,
+      0, # Index.
+      0) # Initial score.
+
+  return thumb
