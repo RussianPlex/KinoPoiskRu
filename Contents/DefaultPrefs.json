@@ -1,17 +1,10 @@
 [
   {
-    "id": "kinopoisk_pref_image_choice",
-    "label": "Обложки и фотографии",
-    "type": "enum",
-    "values": ["брать все", "плохие не брать", "только ярлык", "не брать никаких"],
-    "default": "плохие не брать"
-  },
-  {
     "id": "kinopoisk_pref_max_posters",
     "label": "Максимум обложек",
     "type": "enum",
-    "values": ["2", "4", "6", "8", "10", "12", "14", "20", "40"],
-    "default": "2"
+    "values": ["1", "2", "4", "6", "8", "10", "12", "14", "20"],
+    "default": "1"
   },
   {
     "id": "kinopoisk_pref_max_art",

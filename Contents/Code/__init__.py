@@ -22,18 +22,18 @@
 # @author Stillness-2
 # @author zhenya (Yevgeny Nyden)
 #
-# @version @PLUGIN.REVISION@
-# @revision @REPOSITORY.REVISION@
+# @version 1.2
+# @revision 114
 
 import datetime, string, re, time, math, operator, unicodedata, hashlib
 import common, tmdb
 
-IS_DEBUG = False # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
+IS_DEBUG = True # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
 
 # Default plugin preferences. When modifying, please also change
 # corresponding values in the ../DefaultPrefs.json file.
 KINOPOISK_PREF_DEFAULT_IMAGE_CHOICE = common.IMAGE_CHOICE_BEST
-KINOPOISK_PREF_DEFAULT_MAX_POSTERS = 2
+KINOPOISK_PREF_DEFAULT_MAX_POSTERS = 1
 KINOPOISK_PREF_DEFAULT_MAX_ART = 2
 KINOPOISK_PREF_DEFAULT_GET_ALL_ACTORS = False
 KINOPOISK_PREF_DEFAULT_IMDB_SUPPORT = True
@@ -71,12 +71,12 @@ RU_MONTH = {u'января': '01', u'февраля': '02', u'марта': '03',
 # Plugin preferences.
 # When changing default values here, also update the DefaultPrefs.json file.
 PREFS = common.Preferences(
-  ('kinopoisk_pref_image_choice', KINOPOISK_PREF_DEFAULT_IMAGE_CHOICE),
+  (None, None),
   ('kinopoisk_pref_max_posters', KINOPOISK_PREF_DEFAULT_MAX_POSTERS),
   ('kinopoisk_pref_max_art', KINOPOISK_PREF_DEFAULT_MAX_ART),
   ('kinopoisk_pref_get_all_actors', KINOPOISK_PREF_DEFAULT_GET_ALL_ACTORS),
   ('kinopoisk_pref_imdb_support', KINOPOISK_PREF_DEFAULT_IMDB_SUPPORT),
-  ('kinopoisk_pref_cache_time', KINOPOISK_PREF_DEFAULT_CACHE_TIME))
+  (None, None))
 
 
 def Start():
@@ -113,7 +113,6 @@ class KinoPoiskRuAgent(Agent.Movies):
     mediaYear = media.year
     Log.Debug('searching for name="%s", year="%s", guid="%s", hash="%s"...' %
         (str(mediaName), str(mediaYear), str(media.guid), str(media.hash)))
-
     # Получаем страницу поиска
     Log.Debug('quering kinopoisk...')
 
@@ -178,7 +177,7 @@ class KinoPoiskRuAgent(Agent.Movies):
   ##############################################################################
   ############################# U P D A T E ####################################
   ##############################################################################
-  def update(self, metadata, media, lang):
+  def update(self, metadata, media, lang, force=False):
     """Updates the media title provided a KinoPoisk movie title id (metadata.guid).
        This method fetches an appropriate KinoPoisk page, parses it, and populates
        the passed media item record.
@@ -219,13 +218,8 @@ class KinoPoiskRuAgent(Agent.Movies):
         parseInfoTableTagAndUpdateMetadata(titlePage, metadata)
         parseStudioInfo(metadata, kinoPoiskId)                                    # Studio. Студия.
         parsePeoplePageInfo(titlePage, metadata, kinoPoiskId)                     # Actors, etc. Актёры. др.
-        if PREFS.imageChoice != common.IMAGE_CHOICE_NOTHING:
-          parsePostersInfo(metadata, kinoPoiskId)                                 # Posters. Постеры.
-          parseBackgroundArtInfo(metadata, kinoPoiskId)                           # Background art. Задники.
-        else:
-          Log.Debug(' ... skipping parsing image art.')
-          metadata.posters.validate_keys([])
-          metadata.art.validate_keys([])
+        parsePostersInfo(metadata, kinoPoiskId)                                   # Posters. Постеры.
+        parseBackgroundArtInfo(metadata, kinoPoiskId)                             # Background art. Задники.
       except:
         common.logException('failed to update metadata for id %s' % kinoPoiskId)
 
@@ -516,13 +510,22 @@ def parsePostersInfo(metadata, kinoPoiskId):
   """ Fetches and populates posters metadata.
       Получение адресов постеров.
   """
-  Log.Debug('fetching ===== P O S T E R S ===== for title id "%s"...' % str(kinoPoiskId))
-  loadAllPages = PREFS.maxPosters > 20
-  posterPages = fetchImageDataPages(KINOPOISK_POSTERS, kinoPoiskId, loadAllPages)
+  Log.Debug('===== loading P O S T E R S ===== for title id "%s"...' % str(kinoPoiskId))
+  if PREFS.maxPosters == 0:
+    Log.Debug(' ... SKIPPED.')
+    metadata.posters.validate_keys([])
+    return
 
-  thumb = None
-  if PREFS.imageChoice != common.IMAGE_CHOICE_NOTHING:
-    thumb = getPosterThumbnailBigOrSmall(kinoPoiskId)
+  # Получение ярлыка (большого если есть или маленького с главной страницы).
+  thumb = getPosterThumbnailBigOrSmall(kinoPoiskId)
+
+  # Getting images data frpm poster pages if more than 1 poster is requested.
+  posterPages = None
+  if PREFS.maxPosters > 1:
+    maxPages = 1
+    if PREFS.maxPosters >= 20:
+      maxPages = 2 # Even this is an extreme case, we should need too many pages.
+    posterPages = fetchImageDataPages(KINOPOISK_POSTERS, kinoPoiskId, maxPages)
 
   # Получение URL постеров.
   updateImageMetadata(posterPages, metadata, PREFS.maxPosters, True, thumb)
@@ -532,9 +535,16 @@ def parseBackgroundArtInfo(metadata, kinoPoiskId):
   """ Fetches and populates background art metadata.
       Получение адресов задников.
   """
-  Log.Debug('fetching ===== B A C K G R O U N D  A R T ===== for title id "%s"...' % str(kinoPoiskId))
-  loadAllPages = PREFS.maxArt > 20
-  artPages = fetchImageDataPages(KINOPOISK_ART, kinoPoiskId, loadAllPages)
+  Log.Debug('===== loading B A C K G R O U N D  A R T ===== for title id "%s"...' % str(kinoPoiskId))
+  if PREFS.maxArt == 0:
+    Log.Debug(' ... SKIPPED.')
+    metadata.art.validate_keys([])
+    return
+
+  maxPages = 1
+  if PREFS.maxArt >= 20:
+    maxPages = 2 # Even this is an extreme case, we should need too many pages.
+  artPages = fetchImageDataPages(KINOPOISK_ART, kinoPoiskId, maxPages)
   if not len(artPages):
     Log.Debug(' ... determined NO background art URLs')
     return
@@ -590,22 +600,18 @@ def parseXpathElementValue(elem, path):
 
 def updateImageMetadata(pages, metadata, maxImages, isPoster, thumb):
   thumbnailList = []
-  if PREFS.imageChoice != common.IMAGE_CHOICE_THUMB_ONLY or not isPoster:
+  if thumb is not None:
+    thumbnailList.append(thumb)
+  if maxImages > 1:
     # Parsing URLs from the passed pages.
-    maxImagesToParse = maxImages + 2  # Give it a couple of extras to choose from.
+    maxImagesToParse = maxImages - len(thumbnailList) + 2 # Give it a couple of extras to choose from.
     for page in pages:
       maxImagesToParse = parseImageDataFromPhotoTableTag(page, thumbnailList, isPoster, maxImagesToParse)
       if not maxImagesToParse:
         break
 
-  # Thumbnail is added only if there are no other results or only thumb is requested.
-  if not len(thumbnailList):
-    if thumb is not None and \
-        (PREFS.imageChoice == common.IMAGE_CHOICE_ALL or PREFS.imageChoice == common.IMAGE_CHOICE_THUMB_ONLY):
-      thumbnailList.append(thumb)
-  else:
-    # Sort results according to their score and chop out extraneous images. Сортируем результаты.
-    thumbnailList = sorted(thumbnailList, key=lambda t : t.score, reverse=True)[0:maxImages]
+  # Sort results according to their score and chop out extraneous images. Сортируем результаты.
+  thumbnailList = sorted(thumbnailList, key=lambda t : t.score, reverse=True)[0:maxImages]
   if IS_DEBUG:
     common.printImageSearchResults(thumbnailList)
 
@@ -630,12 +636,12 @@ def updateImageMetadata(pages, metadata, maxImages, isPoster, thumb):
   imagesContainer.validate_keys(validNames)
 
 
-def fetchImageDataPages(urlTemplate, kinoPoiskId, getAllPages):
+def fetchImageDataPages(urlTemplate, kinoPoiskId, maxPages):
   pages = []
   page = common.getElementFromHttpRequest(urlTemplate % (kinoPoiskId, 1), ENCODING_KINOPOISK_PAGE)
   if page is not None:
     pages.append(page)
-    if getAllPages:
+    if maxPages > 1:
       anchorElems = page.xpath('//div[@class="navigator"]/ul/li[@class="arr"]/a')
       if len(anchorElems):
         nav = parseXpathElementValue(anchorElems[-1], './attribute::href')
@@ -646,6 +652,8 @@ def fetchImageDataPages(urlTemplate, kinoPoiskId, getAllPages):
               page =  common.getElementFromHttpRequest(urlTemplate % (kinoPoiskId, pageIndex), ENCODING_KINOPOISK_PAGE)
               if page is not None:
                 pages.append(page)
+                if pageIndex == maxPages:
+                  break
           except:
             common.logException('unable to parse image art page')
   return pages
@@ -736,24 +744,30 @@ def parseImageElemDimensions(imageElem):
 
 
 def getPosterThumbnailBigOrSmall(kinoPoiskId):
+  Log.Debug(' * parsing thumbnail...')
   thumb = None
   try:
     bigImgThumbUrl = KINOPOISK_MOVIE_BIG_THUMBNAIL % kinoPoiskId
     response = common.getResponseFromHttpRequest(bigImgThumbUrl)
     if response is not None:
       contentType = response.headers['content-type']
-      Log.Debug(' *** film_big response content type: "%s"' % str(contentType))
       if 'image/jpeg' == contentType:
+        Log.Debug(' * found BIG thumb')
         thumb = common.Thumbnail(None,
           bigImgThumbUrl,
           KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_WIDTH,
           KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_HEIGHT,
           0, # Index.
           1000) # Big thumb should have the highest initial score.
+      else:
+        Log.Debug(' * BIG thumb is NOT found')
   except:
-    pass
+    Log.Debug(' * UNABLE to fetch BIG thumb')
+    if IS_DEBUG:
+      common.logException('failed to fetch BIG thumb')
 
   if thumb is None:
+    Log.Debug(' * adding default (SMALL) thumb')
     # If there is no big title, add a small one.
     thumb = common.Thumbnail(None,
       KINOPOISK_MOVIE_THUMBNAIL % kinoPoiskId,
