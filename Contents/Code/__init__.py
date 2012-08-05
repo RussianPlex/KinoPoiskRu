@@ -22,13 +22,13 @@
 # @author Stillness-2
 # @author zhenya (Yevgeny Nyden)
 #
-# @version 1.2
-# @revision 114
+# @version @PLUGIN.REVISION@
+# @revision @REPOSITORY.REVISION@
 
 import datetime, string, re, time, math, operator, unicodedata, hashlib
 import common, tmdb
 
-IS_DEBUG = True # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
+IS_DEBUG = False # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
 
 # Default plugin preferences. When modifying, please also change
 # corresponding values in the ../DefaultPrefs.json file.
@@ -230,7 +230,6 @@ def parseInfoTableTagAndUpdateMetadata(page, metadata):
   """
   mainInfoTagRows = page.xpath('//table[@class="info"]/tr')
   Log.Debug('parsed %d rows from the main info table tag' % len(mainInfoTagRows))
-  directors = []
   for infoRowElem in mainInfoTagRows:
     headerTypeElem =  infoRowElem.xpath('./td[@class="type"]/text()')
     if len(headerTypeElem) != 1:
@@ -252,8 +251,9 @@ def parseInfoTableTagAndUpdateMetadata(page, metadata):
       parseDurationInfo(infoRowElem, metadata)              # Duration. Время.
     elif rowTypeKey == u'премьера (мир)':
       parseOriginallyAvailableInfo(infoRowElem, metadata)   # Originally available. Премьера в мире.
+    elif rowTypeKey == u'страна':
+      parseCountryInfo(infoRowElem, metadata)               # Country.
     elif rowTypeKey == u'продюсер' or \
-         rowTypeKey == u'страна' or \
          rowTypeKey == u'оператор' or \
          rowTypeKey == u'композитор' or \
          rowTypeKey == u'художник' or \
@@ -423,6 +423,15 @@ def parseOriginallyAvailableInfo(infoRowElem, metadata):
       metadata.originally_available_at = originalDate
     except:
       common.logException('unable to parse originally available date')
+
+
+def parseCountryInfo(infoRowElem, metadata):
+  countries = common.getXpathOptionalNodeStrings(infoRowElem, './/a/text()')
+  for country in countries:
+    metadata.countries.add(country)
+    Log.Debug(' . . . . country: "%s"' % str(country))
+  if not len(countries):
+    Log.Debug(' . . . . countries: NONE')
 
 
 def parsePeoplePageInfo(titlePage, metadata, kinoPoiskId):
