@@ -33,8 +33,8 @@ IS_DEBUG = False # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
 # Default plugin preferences. When modifying, please also change
 # corresponding values in the ../DefaultPrefs.json file.
 KINOPOISK_PREF_DEFAULT_IMAGE_CHOICE = common.IMAGE_CHOICE_BEST
-KINOPOISK_PREF_DEFAULT_MAX_POSTERS = 4
-KINOPOISK_PREF_DEFAULT_MAX_ART = 4
+KINOPOISK_PREF_DEFAULT_MAX_POSTERS = 2
+KINOPOISK_PREF_DEFAULT_MAX_ART = 2
 KINOPOISK_PREF_DEFAULT_GET_ALL_ACTORS = False
 KINOPOISK_PREF_DEFAULT_IMDB_SUPPORT = True
 KINOPOISK_PREF_DEFAULT_CACHE_TIME = CACHE_1MONTH
@@ -516,7 +516,7 @@ def parsePostersInfo(metadata, kinoPoiskId):
   """ Fetches and populates posters metadata.
       Получение адресов постеров.
   """
-  Log.Debug('fetching posters for title id "%s"...' % str(kinoPoiskId))
+  Log.Debug('fetching ===== P O S T E R S ===== for title id "%s"...' % str(kinoPoiskId))
   loadAllPages = PREFS.maxPosters > 20
   posterPages = fetchImageDataPages(KINOPOISK_POSTERS, kinoPoiskId, loadAllPages)
 
@@ -532,7 +532,7 @@ def parseBackgroundArtInfo(metadata, kinoPoiskId):
   """ Fetches and populates background art metadata.
       Получение адресов задников.
   """
-  Log.Debug('fetching background art for title id "%s"...' % str(kinoPoiskId))
+  Log.Debug('fetching ===== B A C K G R O U N D  A R T ===== for title id "%s"...' % str(kinoPoiskId))
   loadAllPages = PREFS.maxArt > 20
   artPages = fetchImageDataPages(KINOPOISK_ART, kinoPoiskId, loadAllPages)
   if not len(artPages):

@@ -11,14 +11,14 @@
     "label": "Максимум обложек",
     "type": "enum",
     "values": ["2", "4", "6", "8", "10", "12", "14", "20", "40"],
-    "default": "6"
+    "default": "2"
   },
   {
     "id": "kinopoisk_pref_max_art",
     "label": "Максимум фотографий",
     "type": "enum",
     "values": ["2", "4", "6", "8", "10", "12", "14", "20", "40"],
-    "default": "4"
+    "default": "2"
   },
   {
 	  "id": "kinopoisk_pref_get_all_actors",
@@ -36,7 +36,7 @@
     "id": "kinopoisk_pref_cache_time",
     "label": "Кэширование веб-данных",
     "type": "enum",
-    "values": ["1 минута", "1 час", "1 день", "1 неделя", "1 месяц", "1 год"],
+    "values": ["1 день", "1 неделя", "1 месяц", "1 год"],
     "default": "1 месяц"
   }
 ]
