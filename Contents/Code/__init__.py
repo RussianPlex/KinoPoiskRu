@@ -27,6 +27,7 @@
 
 import datetime, string, re, time, math, operator, unicodedata, hashlib
 import common, tmdb
+import urllib
 
 IS_DEBUG = False # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
 
@@ -53,8 +54,8 @@ KINOPOISK_MOVIE_THUMBNAIL = KINOPOISK_RESOURCE_BASE + 'images/film/%s.jpg'
 KINOPOISK_MOVIE_BIG_THUMBNAIL = KINOPOISK_RESOURCE_BASE + 'images/film_big/%s.jpg'
 KINOPOISK_MOVIE_THUMBNAIL_WIDTH = 130
 KINOPOISK_MOVIE_THUMBNAIL_HEIGHT = 168
-KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_WIDTH = 400
-KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_HEIGHT = 600
+KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_WIDTH = 600
+KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_HEIGHT = 1024
 
 # Страница поиска.
 KINOPOISK_SEARCH = 'http://www.kinopoisk.ru/index.php?first=no&kp_query=%s'
@@ -116,7 +117,10 @@ class KinoPoiskRuAgent(Agent.Movies):
     # Получаем страницу поиска
     Log.Debug('quering kinopoisk...')
 
-    page = common.getElementFromHttpRequest(KINOPOISK_SEARCH % mediaName.replace(' ', '%20'), ENCODING_KINOPOISK_PAGE)
+    encodedName = urllib.quote(mediaName.encode(ENCODING_KINOPOISK_PAGE)
+    page = common.getElementFromHttpRequest(KINOPOISK_SEARCH % encodedName), ENCODING_KINOPOISK_PAGE)
+    Log.Debug('Loading page "%s"' % encodedName))
+
     if page is None:
       Log.Warn('nothing was found on kinopoisk for media name "%s"' % mediaName)
     else:
@@ -156,7 +160,7 @@ class KinoPoiskRuAgent(Agent.Movies):
           itemIndex += 1
       else:
         Log.Warn('nothing was found on kinopoisk for media name "%s"' % mediaName)
-        # TODO(zhenya): investigate 1 we need this clause at all (haven't seen this happening).
+        # TODO(zhenya): investigate if we need this clause at all (haven't seen this happening).
         # Если не нашли там текст названия, значит сайт сразу дал нам страницу с фильмом (хочется верить =)
         try:
           title = page.xpath('//h1[@class="moviename-big"]/text()')[0].strip()
