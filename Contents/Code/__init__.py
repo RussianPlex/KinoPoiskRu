@@ -323,35 +323,41 @@ def parseSummaryInfo(page, metadata):
 
 
 def parseRatingInfo(page, metadata, kinoPoiskId):
-  ratingText = page.xpath('.//*[@id="block_rating"]/div[1]/div[1]/a/span[1]/text()')
-  if len(ratingText):
-    try:
+  try:
+    ratingText = page.xpath('.//*[@id="block_rating"]/div[1]/div[1]/a/span[1]/text()')
+    if len(ratingText):
       rating = float(ratingText[0])
       Log.Debug(' ... parsed rating "%s"' % str(rating))
       metadata.rating = rating
-    except:
-      common.logException('unable to parse rating')
+  except:
+    common.logException('unable to parse rating')
+
 
 def parseIMDbRatingInfo(page, metadata, kinoPoiskId):
-  if PREFS.imdbRating:
-    ratingIMDbText = page.xpath('.//*[@class="block_2"]/div[2]/text()')[0].strip()
-    if len(ratingIMDbText) and len(ratingIMDbText) < 50: # Sanity check.
-      try:
+  try:
+    if PREFS.imdbRating:
+      ratingIMDbText = common.getXpathOptionalNode(page, './/*[@class="block_2"]/div[2]/text()')
+      if ratingIMDbText and len(ratingIMDbText) < 50: # Sanity check.
         metadata.summary = ratingIMDbText + '. ' + metadata.summary
         Log.Debug(' ... parsed IMDb rating "%s"' % ratingIMDbText)
-      except:
-        common.logException('unable to parse IMDb rating')
+  except:
+    common.logException('unable to parse IMDb rating')
+
 
 def parseExtendedRatingInfo(page, metadata, kinoPoiskId):
-  if PREFS.additionalRating:
-    ratingText1 = page.xpath('.//*[@id="block_rating"]/div[1]/div[1]/a/span[1]/text()')[0].strip()
-    ratingText2 = page.xpath('.//*[@id="block_rating"]/div[1]/div[1]/a/span[2]/text()')[0].strip()
-    if len(ratingText1) and len(ratingText1) < 50: # Sanity check.
-      try:
-        metadata.summary = 'КиноПоиск ' + ratingText1 + ' (' + ratingText2 + '). '+ metadata.summary
-        Log.Debug(' ... parsed extended kinopoisk rating 1="%s", 2="%s"' % (ratingText1, ratingText2))
-      except:
-        common.logException('unable to parse extended kinopoisk rating')
+  try:
+    if PREFS.additionalRating:
+      ratingText1 = common.getXpathOptionalNode(page, './/*[@id="block_rating"]/div[1]/div[1]/a/span[1]/text()')
+      ratingText2 = common.getXpathOptionalNode(page, './/*[@id="block_rating"]/div[1]/div[1]/a/span[2]/text()')
+      if ratingText1 and len(ratingText1) < 50: # Sanity check.
+        ratingText = 'КиноПоиск ' + ratingText1
+        if ratingText2 and len(ratingText2) < 50: # Sanity check.
+          ratingText = ratingText + ' (' + ratingText2 + ')'
+        metadata.summary = ratingText + '. ' + metadata.summary
+        Log.Debug(' ... parsed extended kinopoisk rating 1="%s", 2="%s"' % (str(ratingText1), str(ratingText2)))
+  except:
+    common.logException('unable to parse extended kinopoisk rating')
+
 
 def parseStudioInfo(metadata, kinoPoiskId):
   page = common.getElementFromHttpRequest(KINOPOISK_STUDIO % kinoPoiskId, ENCODING_KINOPOISK_PAGE)
@@ -376,13 +382,13 @@ def parseDirectorsInfo(infoRowElem, metadata):
 
 
 def parseYearInfo(infoRowElem, metadata):
-  yearText = infoRowElem.xpath('.//a/text()')
-  if len(yearText):
-    Log.Debug(' ... parsed year: %s' % yearText[0])
-    try:
+  try:
+    yearText = infoRowElem.xpath('.//a/text()')
+    if len(yearText):
+      Log.Debug(' ... parsed year: %s' % yearText[0])
       metadata.year = int(yearText[0])
-    except:
-      common.logException('unable to parse year')
+  except:
+    common.logException('unable to parse year')
 
 
 def parseWritersInfo(infoRowElem, metadata):
@@ -428,22 +434,22 @@ def parseContentRatingInfo(infoRowElem, metadata):
 
 
 def parseDurationInfo(infoRowElem, metadata):
-  durationElems = infoRowElem.xpath('./td[@class="time"]/text()')
-  if len(durationElems) > 0:
-    try:
+  try:
+    durationElems = infoRowElem.xpath('./td[@class="time"]/text()')
+    if len(durationElems) > 0:
       match = MATCHER_MOVIE_DURATION.search(durationElems[0])
       if match is not None:
         duration = int(int(match.groups(1)[0])) * 1000 * 60
         Log.Debug(' ... parsed duration: "%s"' % str(duration))
         metadata.duration = duration
-    except:
-      common.logException('unable to parse duration')
+  except:
+    common.logException('unable to parse duration')
 
 
 def parseOriginallyAvailableInfo(infoRowElem, metadata):
-  originalDateElems = infoRowElem.xpath('.//a/text()')
-  if len(originalDateElems):
-    try:
+  try:
+    originalDateElems = infoRowElem.xpath('.//a/text()')
+    if len(originalDateElems):
       (dd, mm, yy) = originalDateElems[0].split()
       if len(dd) == 1:
         dd = '0' + dd
@@ -451,8 +457,8 @@ def parseOriginallyAvailableInfo(infoRowElem, metadata):
       originalDate = Datetime.ParseDate(yy + '-' + mm + '-' + dd).date()
       Log.Debug(' ... parsed originally available date: "%s"' % str(originalDate))
       metadata.originally_available_at = originalDate
-    except:
-      common.logException('unable to parse originally available date')
+  except:
+    common.logException('unable to parse originally available date')
 
 
 def parseCountryInfo(infoRowElem, metadata):
