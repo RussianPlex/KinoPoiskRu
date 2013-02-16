@@ -324,11 +324,10 @@ def parseSummaryInfo(page, metadata):
 
 def parseRatingInfo(page, metadata, kinoPoiskId):
   try:
-    ratingText = page.xpath('.//*[@id="block_rating"]/div[1]/div[1]/a/span[1]/text()')
-    if len(ratingText):
-      rating = float(ratingText[0])
-      Log.Debug(' ... parsed rating "%s"' % str(rating))
-      metadata.rating = rating
+    ratingText = common.getXpathOptionalNode(page, './/*[@id="block_rating"]/div[1]/div[1]/a/span[1]/text()')
+    if ratingText:
+      metadata.rating = float(ratingText)
+      Log.Debug(' ... parsed rating "%s"' % ratingText)
   except:
     common.logException('unable to parse rating')
 
