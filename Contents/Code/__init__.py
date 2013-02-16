@@ -39,6 +39,8 @@ KINOPOISK_PREF_DEFAULT_MAX_ART = 2
 KINOPOISK_PREF_DEFAULT_GET_ALL_ACTORS = False
 KINOPOISK_PREF_DEFAULT_IMDB_SUPPORT = True
 KINOPOISK_PREF_DEFAULT_CACHE_TIME = CACHE_1MONTH
+KINOPOISK_PREF_DEFAULT_IMDB_RATING = False
+KINOPOISK_PREF_DEFAULT_KP_RATING = False
 
 ENCODING_KINOPOISK_PAGE = 'cp1251'
 
@@ -65,7 +67,7 @@ MATCHER_MOVIE_DURATION = re.compile('\s*(\d+).*?', re.UNICODE | re.DOTALL)
 MATCHER_WIDTH_FROM_STYLE = re.compile('.*width\s*:\s*(\d+)px.*', re.UNICODE)
 MATCHER_HEIGHT_FROM_STYLE = re.compile('.*height\s*:\s*(\d+)px.*', re.UNICODE)
 
-# Русские месяца, пригодится для определения дат.
+# Русские месяца, пригодятся для определения дат.
 RU_MONTH = {u'января': '01', u'февраля': '02', u'марта': '03', u'апреля': '04', u'мая': '05', u'июня': '06', u'июля': '07', u'августа': '08', u'сентября': '09', u'октября': '10', u'ноября': '11', u'декабря': '12'}
 
 
@@ -77,7 +79,9 @@ PREFS = common.Preferences(
   ('kinopoisk_pref_max_art', KINOPOISK_PREF_DEFAULT_MAX_ART),
   ('kinopoisk_pref_get_all_actors', KINOPOISK_PREF_DEFAULT_GET_ALL_ACTORS),
   ('kinopoisk_pref_imdb_support', KINOPOISK_PREF_DEFAULT_IMDB_SUPPORT),
-  (None, None))
+  (None, None),
+  ('kinopoisk_pref_imdb_rating', KINOPOISK_PREF_DEFAULT_IMDB_RATING),
+  ('kinopoisk_pref_kp_rating', KINOPOISK_PREF_DEFAULT_KP_RATING))
 
 
 def Start():
@@ -95,7 +99,7 @@ class KinoPoiskRuAgent(Agent.Movies):
   languages = [Locale.Language.Russian]
   primary_provider = True
   fallback_agent = False
-  accepts_from = None
+  accepts_from = ['com.plexapp.agents.localmedia']
   contributes_to = None
 
 
@@ -117,9 +121,9 @@ class KinoPoiskRuAgent(Agent.Movies):
     # Получаем страницу поиска
     Log.Debug('quering kinopoisk...')
 
-    encodedName = urllib.quote(mediaName.encode(ENCODING_KINOPOISK_PAGE)
-    page = common.getElementFromHttpRequest(KINOPOISK_SEARCH % encodedName), ENCODING_KINOPOISK_PAGE)
-    Log.Debug('Loading page "%s"' % encodedName))
+    encodedName = urllib.quote(mediaName.encode(ENCODING_KINOPOISK_PAGE))
+    Log.Debug('Loading page "%s"' % encodedName)
+    page = common.getElementFromHttpRequest(KINOPOISK_SEARCH % encodedName, ENCODING_KINOPOISK_PAGE)
 
     if page is None:
       Log.Warn('nothing was found on kinopoisk for media name "%s"' % mediaName)
@@ -220,6 +224,8 @@ class KinoPoiskRuAgent(Agent.Movies):
         parseSummaryInfo(titlePage, metadata)                                     # Summary. Описание.
         parseRatingInfo(titlePage, metadata, kinoPoiskId)                         # Rating. Рейтинг.
         parseInfoTableTagAndUpdateMetadata(titlePage, metadata)
+        parseIMDbRatingInfo(titlePage, metadata, kinoPoiskId)                     # IMDB Rating. Рейтинг IMDB берется со страницы на кинопоиске
+        parseExtendedRatingInfo(titlePage, metadata, kinoPoiskId)                 # kinopoisk Rating. Информация о рейтинге с количеством голосов
         parseStudioInfo(metadata, kinoPoiskId)                                    # Studio. Студия.
         parsePeoplePageInfo(titlePage, metadata, kinoPoiskId)                     # Actors, etc. Актёры. др.
         parsePostersInfo(metadata, kinoPoiskId)                                   # Posters. Постеры.
@@ -326,6 +332,26 @@ def parseRatingInfo(page, metadata, kinoPoiskId):
     except:
       common.logException('unable to parse rating')
 
+def parseIMDbRatingInfo(page, metadata, kinoPoiskId):
+  if PREFS.imdbRating:
+    ratingIMDbText = page.xpath('.//*[@class="block_2"]/div[2]/text()')[0].strip()
+    if len(ratingIMDbText) and len(ratingIMDbText) < 50: # Sanity check.
+      try:
+        metadata.summary = ratingIMDbText + '. ' + metadata.summary
+        Log.Debug(' ... parsed IMDb rating "%s"' % ratingIMDbText)
+      except:
+        common.logException('unable to parse IMDb rating')
+
+def parseExtendedRatingInfo(page, metadata, kinoPoiskId):
+  if PREFS.additionalRating:
+    ratingText1 = page.xpath('.//*[@id="block_rating"]/div[1]/div[1]/a/span[1]/text()')[0].strip()
+    ratingText2 = page.xpath('.//*[@id="block_rating"]/div[1]/div[1]/a/span[2]/text()')[0].strip()
+    if len(ratingText1) and len(ratingText1) < 50: # Sanity check.
+      try:
+        metadata.summary = 'КиноПоиск ' + ratingText1 + ' (' + ratingText2 + '). '+ metadata.summary
+        Log.Debug(' ... parsed extended kinopoisk rating 1="%s", 2="%s"' % (ratingText1, ratingText2))
+      except:
+        common.logException('unable to parse extended kinopoisk rating')
 
 def parseStudioInfo(metadata, kinoPoiskId):
   page = common.getElementFromHttpRequest(KINOPOISK_STUDIO % kinoPoiskId, ENCODING_KINOPOISK_PAGE)
@@ -407,7 +433,7 @@ def parseDurationInfo(infoRowElem, metadata):
     try:
       match = MATCHER_MOVIE_DURATION.search(durationElems[0])
       if match is not None:
-        duration = int(int(match.groups(1)[0])) * 1000
+        duration = int(int(match.groups(1)[0])) * 1000 * 60
         Log.Debug(' ... parsed duration: "%s"' % str(duration))
         metadata.duration = duration
     except:

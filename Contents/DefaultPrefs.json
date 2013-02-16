@@ -31,5 +31,17 @@
     "type": "enum",
     "values": ["1 день", "1 неделя", "1 месяц", "1 год"],
     "default": "1 месяц"
+  },
+  {
+	  "id": "kinopoisk_pref_imdb_rating",
+    "label": "Добавлять рейтинг IMDb в описание фильма",
+	  "type": "bool",
+	  "default": "false"
+  },
+  {
+    "id": "kinopoisk_pref_kp_rating",
+    "label": "Добавлять рейтинг kinopoisk.ru в описание фильма",
+	  "type": "bool",
+	  "default": "false"
   }
 ]
