@@ -28,6 +28,7 @@
 import datetime, string, re, time, math, operator, unicodedata, hashlib
 import common, tmdb
 import urllib
+import pageparser
 
 IS_DEBUG = False # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
 
@@ -42,7 +43,7 @@ KINOPOISK_PREF_DEFAULT_CACHE_TIME = CACHE_1MONTH
 KINOPOISK_PREF_DEFAULT_IMDB_RATING = False
 KINOPOISK_PREF_DEFAULT_KP_RATING = False
 
-ENCODING_KINOPOISK_PAGE = 'cp1251'
+ENCODING_KINOPOISK_PAGE = pageparser.ENCODING_KINOPOISK_PAGE
 
 # Разные страницы сайта.
 KINOPOISK_SITE_BASE = 'http://www.kinopoisk.ru/'
@@ -298,8 +299,8 @@ def parseOriginalTitleInfo(page, metadata):
     metadata.original_title = origTitle
 
 
-def parseActorsInfoIntoMap(page):
-  actorsMap = {}
+def parseMainActorsFromLanding(page):
+  actorsMap = []
   actors = page.xpath('//td[@class="actor_list"]/div/span')
   Log.Debug(' ... parsed %d actor tags' % len(actors))
   for actorSpanTag in actors:
@@ -308,8 +309,8 @@ def parseActorsInfoIntoMap(page):
     if len(actorList):
       for actor in actorList:
         if actor != u'...':
-          Log.Debug(' . . . . actor: "%s"' % actor)
-          actorsMap[actor] = actor
+          Log.Debug(' . . . . main actor: "%s"' % actor)
+          actorsMap.append(actor)
   return actorsMap
 
 
@@ -470,76 +471,33 @@ def parseCountryInfo(infoRowElem, metadata):
 
 
 def parsePeoplePageInfo(titlePage, metadata, kinoPoiskId):
-  """ Parses people - mostly actors - here (on this page)
-      we have access to extensive information about all who participated
+  """ Parses people - mostly actors. Here (on this page)
+      we have access to extensive information about all who participated in
       creating this movie.
   """
-  # First, parse actors from the main title page.
+  # Parse a dedicated 'people' page.
   parseAllActors = PREFS.getAllActors
-  actorsMap = parseActorsInfoIntoMap(titlePage)
-  mainActors = []
-  otherActors = []
-
-  # Now, parse a dedicated 'people' page.
   page = common.getElementFromHttpRequest(KINOPOISK_PEOPLE % kinoPoiskId, ENCODING_KINOPOISK_PAGE)
-  if page is None:
-    Log.Debug('NO people page')
-    for actorName in actorsMap.keys():
-      addActorToMetadata(metadata, actorName, None)
-    return
-  personType = None
-  peopleTags = page.xpath('//div[@id="content_block"]/table/tr/td/div[@class="block_left"]/*')
-  for peopleTagElem in peopleTags:
-    try:
-      if peopleTagElem.tag == 'table':
-        personType = None
-        tagElems = peopleTagElem.xpath('./tr/td[@style="padding-left:20px;border-bottom:2px solid #f60;font-size:16px"]/text()')
-        if len(tagElems):
-          tagName = tagElems[0]
-          if tagName == u'Актеры':
-            personType = 'actor'
-          elif tagName == u'Директора фильма' or tagName == u'Режиссеры':
-            personType = 'director'
-          elif tagName == u'Сценаристы':
-            personType = 'writer'
-          elif tagName == u'Операторы' or \
-               tagName == u'Монтажеры' or \
-               tagName == u'Композиторы' or \
-               tagName == u'Художники':
-            # Skip these tags for now.
-            personType = None
-            Log.Debug('skipping an unsupported tag "%s"' % tagName)
-          else:
-            Log.Debug('skipping an unknown tag "%s"' % tagName)
-      elif peopleTagElem.tag == 'div':
-        personNameElems = peopleTagElem.xpath('./div/div/div[@class="name"]/a/text()')
-        personName = None
-        if len(personNameElems):
-          personName = personNameElems[0]
-        if personType == 'actor':
-          actorRoleElems = peopleTagElem.xpath('./div/div/div[@class="role"]/text()')
-          if len(actorRoleElems):
-            roleName = str(actorRoleElems[0]).strip().strip('. ')
-            if personName in actorsMap:
-              Log.Debug(' . . . . parsed main actor "%s" with role "%s"' % (personName, roleName))
-              mainActors.append((personName, roleName))
-              del actorsMap[personName]
-            elif parseAllActors:
-              Log.Debug(' . . . . parsed other actor "%s" with role "%s"' % (personName, roleName))
-              otherActors.append((personName, roleName))
-      else:
-        personType = None
-    except:
-      common.logException('unable to parse a people tag')
+  data = pageparser.parsePeoplePage(page, parseAllActors)
+  actorRoles = data['actors']
+
+  # Parse main actors from the main title page.
+  mainActors = parseMainActorsFromLanding(titlePage)
+  actors = []
+  for mainActor in mainActors:
+    i = 0
+    while i < len(actorRoles):
+      actorRole = actorRoles[i]
+      if actorRole[0] == mainActor:
+        actors.append((mainActor, actorRole[1]))
+        del actorRoles[i]
+        break
+      i = i + 1
 
   # Adding main actors that were found on the 'people' page.
-  for personName, roleName in mainActors:
+  for personName, roleName in actors:
     addActorToMetadata(metadata, personName, roleName)
-  # Adding main actors that were NOT found on the 'people' page.
-  for actorName in actorsMap.keys():
-    addActorToMetadata(metadata, actorName, None)
-  # Adding other actors if requested.
-  for personName, roleName in otherActors:
+  for personName, roleName in actorRoles:
     addActorToMetadata(metadata, personName, roleName)
 
 
@@ -548,6 +506,7 @@ def addActorToMetadata(metadata, actorName, roleName):
   role.actor = actorName
   if roleName is not None and roleName != '':
     role.role = roleName
+  Log.Debug(' . . . actor/role: ' + actorName + ' => ' + str(roleName))
 
 
 def parsePostersInfo(metadata, kinoPoiskId):
