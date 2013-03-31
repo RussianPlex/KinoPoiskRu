@@ -47,12 +47,12 @@ class PeopleParser:
     count = 0
     actors = []
     if loadAllActors:
-      maxActors =  MAX_ALL_ACTORS
+      actorsToParse =  MAX_ALL_ACTORS
     else:
-      maxActors =  MAX_ACTORS
+      actorsToParse =  MAX_ACTORS
     for infoBlock in infoBlocks:
       personBlockNodes = infoBlock.xpath('div[@class="actorInfo"]/div[@class="info"]/div[@class="name"]/*')
-      if count > maxActors or (len(personBlockNodes) == 0 and count > 1):
+      if actorsToParse == 0 or (len(personBlockNodes) == 0 and count > 1):
         # Stop on the first miss after second element - it probably means
         # we got to the next section (<a> tag of the "Продюсеры" section).
         break
@@ -69,6 +69,7 @@ class PeopleParser:
             actorRole = actorRole[0:inTitleInd]
           actorRole = actorRole.strip().strip('. ')
           actors.append((actorName, actorRole))
+          actorsToParse = actorsToParse - 1
           self.log.Debug('   <<< parsed actor: name="%s", role="%s"...' % (actorName, actorRole))
         except:
           self.log.Error('   <<< error parsing actor "%s"!' % str(actorName))
