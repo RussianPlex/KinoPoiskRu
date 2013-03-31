@@ -22,14 +22,19 @@
 # @author zhenya (Yevgeny Nyden)
 # @revision @REPOSITORY.REVISION@
 
+import sys
 
 MAX_ACTORS = 10
 MAX_ALL_ACTORS = 50
 
+# Actor role suffix that's going to be stripped.
+ROLE_USELESS_SUFFFIX = u', в титрах '
+
 
 class PeopleParser:
-  def __init__(self, logger):
+  def __init__(self, logger, isDebug = False):
     self.log = logger
+    self.isDebug = isDebug
 
   def parse(self, page, loadAllActors):
     """ Parses a given people page. Parsed actors are stored in
@@ -53,14 +58,23 @@ class PeopleParser:
         break
       count = count + 1
       if len(personBlockNodes) > 0:
+        actorName = None
         try:
           actorName = personBlockNodes[0].text.encode('utf8')
           roleNode = personBlockNodes[0].getparent().getparent()[1]
-          actorRole = roleNode.text.encode('utf8').strip().strip('. ')
+          actorRole = roleNode.text.encode('utf8')
+          inTitleInd = roleNode.text.find(ROLE_USELESS_SUFFFIX)
+          if inTitleInd > 0:
+            # Remove useless suffix.
+            actorRole = actorRole[0:inTitleInd]
+          actorRole = actorRole.strip().strip('. ')
           actors.append((actorName, actorRole))
           self.log.Debug('   <<< parsed actor: name="%s", role="%s"...' % (actorName, actorRole))
         except:
-          pass
+          self.log.Error('   <<< error parsing actor "%s"!' % str(actorName))
+          if self.isDebug:
+            excInfo = sys.exc_info()
+            self.log.Exception('   exception: %s; cause: %s' % (excInfo[0], excInfo[1]))
     data = {'actors': actors}
     self.log.Info(' <<< Parsed %d actors.' % len(actors))
     return data
