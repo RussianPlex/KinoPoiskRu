@@ -25,64 +25,29 @@
 # @version @PLUGIN.REVISION@
 # @revision @REPOSITORY.REVISION@
 
-import datetime, string, re, time, math, operator, unicodedata, hashlib
-import common, tmdb
-import urllib
-import pageparser
+import datetime, string, re, time, math, operator, unicodedata, hashlib, urllib
+import common, tmdb, pageparser, pluginsettings as S
+
 
 IS_DEBUG = False # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
 
-# Default plugin preferences. When modifying, please also change
-# corresponding values in the ../DefaultPrefs.json file.
-KINOPOISK_PREF_DEFAULT_IMAGE_CHOICE = common.IMAGE_CHOICE_BEST
-KINOPOISK_PREF_DEFAULT_MAX_POSTERS = 1
-KINOPOISK_PREF_DEFAULT_MAX_ART = 2
-KINOPOISK_PREF_DEFAULT_GET_ALL_ACTORS = False
-KINOPOISK_PREF_DEFAULT_IMDB_SUPPORT = True
-KINOPOISK_PREF_DEFAULT_CACHE_TIME = CACHE_1MONTH
-KINOPOISK_PREF_DEFAULT_IMDB_RATING = False
-KINOPOISK_PREF_DEFAULT_KP_RATING = False
-
-ENCODING_KINOPOISK_PAGE = pageparser.ENCODING_KINOPOISK_PAGE
-
-# Разные страницы сайта.
-KINOPOISK_SITE_BASE = 'http://www.kinopoisk.ru/'
-KINOPOISK_RESOURCE_BASE = 'http://st.kinopoisk.ru/'
-KINOPOISK_TITLE_PAGE_URL = KINOPOISK_SITE_BASE + 'level/1/film/%s/'
-KINOPOISK_PEOPLE = KINOPOISK_SITE_BASE + 'level/19/film/%s/'
-KINOPOISK_STUDIO = KINOPOISK_SITE_BASE + 'level/91/film/%s/'
-KINOPOISK_POSTERS = KINOPOISK_SITE_BASE + 'level/17/film/%s/page/%d/'
-KINOPOISK_ART = KINOPOISK_SITE_BASE + 'level/13/film/%s/page/%d/'
-KINOPOISK_MOVIE_THUMBNAIL = KINOPOISK_RESOURCE_BASE + 'images/film/%s.jpg'
-KINOPOISK_MOVIE_BIG_THUMBNAIL = KINOPOISK_RESOURCE_BASE + 'images/film_big/%s.jpg'
-KINOPOISK_MOVIE_THUMBNAIL_WIDTH = 130
-KINOPOISK_MOVIE_THUMBNAIL_HEIGHT = 168
-KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_WIDTH = 600
-KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_HEIGHT = 1024
-
-# Страница поиска.
-KINOPOISK_SEARCH = 'http://www.kinopoisk.ru/index.php?first=no&kp_query=%s'
-
-# Compiled regex matchers.
+# Compiled regex matchers. TODO: move it to a pageparser?
 MATCHER_MOVIE_DURATION = re.compile('\s*(\d+).*?', re.UNICODE | re.DOTALL)
 MATCHER_WIDTH_FROM_STYLE = re.compile('.*width\s*:\s*(\d+)px.*', re.UNICODE)
 MATCHER_HEIGHT_FROM_STYLE = re.compile('.*height\s*:\s*(\d+)px.*', re.UNICODE)
-
-# Русские месяца, пригодятся для определения дат.
-RU_MONTH = {u'января': '01', u'февраля': '02', u'марта': '03', u'апреля': '04', u'мая': '05', u'июня': '06', u'июля': '07', u'августа': '08', u'сентября': '09', u'октября': '10', u'ноября': '11', u'декабря': '12'}
 
 
 # Plugin preferences.
 # When changing default values here, also update the DefaultPrefs.json file.
 PREFS = common.Preferences(
   (None, None),
-  ('kinopoisk_pref_max_posters', KINOPOISK_PREF_DEFAULT_MAX_POSTERS),
-  ('kinopoisk_pref_max_art', KINOPOISK_PREF_DEFAULT_MAX_ART),
-  ('kinopoisk_pref_get_all_actors', KINOPOISK_PREF_DEFAULT_GET_ALL_ACTORS),
-  ('kinopoisk_pref_imdb_support', KINOPOISK_PREF_DEFAULT_IMDB_SUPPORT),
+  ('kinopoisk_pref_max_posters', S.KINOPOISK_PREF_DEFAULT_MAX_POSTERS),
+  ('kinopoisk_pref_max_art', S.KINOPOISK_PREF_DEFAULT_MAX_ART),
+  ('kinopoisk_pref_get_all_actors', S.KINOPOISK_PREF_DEFAULT_GET_ALL_ACTORS),
+  ('kinopoisk_pref_imdb_support', S.KINOPOISK_PREF_DEFAULT_IMDB_SUPPORT),
   (None, None),
-  ('kinopoisk_pref_imdb_rating', KINOPOISK_PREF_DEFAULT_IMDB_RATING),
-  ('kinopoisk_pref_kp_rating', KINOPOISK_PREF_DEFAULT_KP_RATING))
+  ('kinopoisk_pref_imdb_rating', S.KINOPOISK_PREF_DEFAULT_IMDB_RATING),
+  ('kinopoisk_pref_kp_rating', S.KINOPOISK_PREF_DEFAULT_KP_RATING))
 
 
 def Start():
@@ -122,9 +87,9 @@ class KinoPoiskRuAgent(Agent.Movies):
     # Получаем страницу поиска
     Log.Debug('quering kinopoisk...')
 
-    encodedName = urllib.quote(mediaName.encode(ENCODING_KINOPOISK_PAGE))
+    encodedName = urllib.quote(mediaName.encode(S.ENCODING_KINOPOISK_PAGE))
     Log.Debug('Loading page "%s"' % encodedName)
-    page = common.getElementFromHttpRequest(KINOPOISK_SEARCH % encodedName, ENCODING_KINOPOISK_PAGE)
+    page = common.getElementFromHttpRequest(S.KINOPOISK_SEARCH % encodedName, S.ENCODING_KINOPOISK_PAGE)
 
     if page is None:
       Log.Warn('nothing was found on kinopoisk for media name "%s"' % mediaName)
@@ -215,7 +180,7 @@ class KinoPoiskRuAgent(Agent.Movies):
 
 
   def updateMediaItem(self, metadata, kinoPoiskId):
-    titlePage =  common.getElementFromHttpRequest(KINOPOISK_TITLE_PAGE_URL % kinoPoiskId, ENCODING_KINOPOISK_PAGE)
+    titlePage =  common.getElementFromHttpRequest(S.KINOPOISK_TITLE_PAGE_URL % kinoPoiskId, S.ENCODING_KINOPOISK_PAGE)
     if titlePage is not None:
       Log.Debug('got a KinoPoisk page for movie title id: "%s"' % kinoPoiskId)
       try:
@@ -360,7 +325,7 @@ def parseExtendedRatingInfo(page, metadata, kinoPoiskId):
 
 
 def parseStudioInfo(metadata, kinoPoiskId):
-  page = common.getElementFromHttpRequest(KINOPOISK_STUDIO % kinoPoiskId, ENCODING_KINOPOISK_PAGE)
+  page = common.getElementFromHttpRequest(S.KINOPOISK_STUDIO % kinoPoiskId, S.ENCODING_KINOPOISK_PAGE)
   if not page:
     return
   studios = page.xpath(u'//table/tr/td[b="Производство:"]/../following-sibling::tr/td/a/text()')
@@ -453,7 +418,7 @@ def parseOriginallyAvailableInfo(infoRowElem, metadata):
       (dd, mm, yy) = originalDateElems[0].split()
       if len(dd) == 1:
         dd = '0' + dd
-      mm = RU_MONTH[mm]
+      mm = S.RU_MONTH[mm]
       originalDate = Datetime.ParseDate(yy + '-' + mm + '-' + dd).date()
       Log.Debug(' ... parsed originally available date: "%s"' % str(originalDate))
       metadata.originally_available_at = originalDate
@@ -477,7 +442,7 @@ def parsePeoplePageInfo(titlePage, metadata, kinoPoiskId):
   """
   # Parse a dedicated 'people' page.
   parseAllActors = PREFS.getAllActors
-  page = common.getElementFromHttpRequest(KINOPOISK_PEOPLE % kinoPoiskId, ENCODING_KINOPOISK_PAGE)
+  page = common.getElementFromHttpRequest(S.KINOPOISK_PEOPLE % kinoPoiskId, S.ENCODING_KINOPOISK_PAGE)
   data = pageparser.parsePeoplePage(page, parseAllActors)
   actorRoles = data['actors']
 
@@ -528,7 +493,7 @@ def parsePostersInfo(metadata, kinoPoiskId):
     maxPages = 1
     if PREFS.maxPosters >= 20:
       maxPages = 2 # Even this is an extreme case, we should need too many pages.
-    posterPages = fetchImageDataPages(KINOPOISK_POSTERS, kinoPoiskId, maxPages)
+    posterPages = fetchImageDataPages(S.KINOPOISK_POSTERS, kinoPoiskId, maxPages)
 
   # Получение URL постеров.
   updateImageMetadata(posterPages, metadata, PREFS.maxPosters, True, thumb)
@@ -547,7 +512,7 @@ def parseBackgroundArtInfo(metadata, kinoPoiskId):
   maxPages = 1
   if PREFS.maxArt >= 20:
     maxPages = 2 # Even this is an extreme case, we should need too many pages.
-  artPages = fetchImageDataPages(KINOPOISK_ART, kinoPoiskId, maxPages)
+  artPages = fetchImageDataPages(S.KINOPOISK_ART, kinoPoiskId, maxPages)
   if not len(artPages):
     Log.Debug(' ... determined NO background art URLs')
     return
@@ -591,7 +556,7 @@ def ensureAbsoluteUrl(url):
   url = url.strip()
   if url[0:4] == 'http':
     return url
-  return KINOPOISK_SITE_BASE + url.lstrip('/')
+  return S.KINOPOISK_SITE_BASE + url.lstrip('/')
 
 
 def parseXpathElementValue(elem, path):
@@ -641,7 +606,7 @@ def updateImageMetadata(pages, metadata, maxImages, isPoster, thumb):
 
 def fetchImageDataPages(urlTemplate, kinoPoiskId, maxPages):
   pages = []
-  page = common.getElementFromHttpRequest(urlTemplate % (kinoPoiskId, 1), ENCODING_KINOPOISK_PAGE)
+  page = common.getElementFromHttpRequest(urlTemplate % (kinoPoiskId, 1), S.ENCODING_KINOPOISK_PAGE)
   if page is not None:
     pages.append(page)
     if maxPages > 1:
@@ -652,7 +617,7 @@ def fetchImageDataPages(urlTemplate, kinoPoiskId, maxPages):
         if match is not None:
           try:
             for pageIndex in range(2, int(match.groups(1)[0]) + 1):
-              page =  common.getElementFromHttpRequest(urlTemplate % (kinoPoiskId, pageIndex), ENCODING_KINOPOISK_PAGE)
+              page =  common.getElementFromHttpRequest(urlTemplate % (kinoPoiskId, pageIndex), S.ENCODING_KINOPOISK_PAGE)
               if page is not None:
                 pages.append(page)
                 if pageIndex == maxPages:
@@ -702,7 +667,7 @@ def parseImageDataFromAnchorElement(anchorElem, index):
       thumbSizeUrl = ensureAbsoluteUrl(thumbSizeUrl)
 
   if fullSizeProxyPageUrl is not None:
-    fullSizeProxyPage = common.getElementFromHttpRequest(ensureAbsoluteUrl(fullSizeProxyPageUrl), ENCODING_KINOPOISK_PAGE)
+    fullSizeProxyPage = common.getElementFromHttpRequest(ensureAbsoluteUrl(fullSizeProxyPageUrl), S.ENCODING_KINOPOISK_PAGE)
     if fullSizeProxyPage is not None:
       imageElem = parseXpathElementValue(fullSizeProxyPage, '//img[@id="image"]')
       if imageElem is not None:
@@ -750,7 +715,7 @@ def getPosterThumbnailBigOrSmall(kinoPoiskId):
   Log.Debug(' * parsing thumbnail...')
   thumb = None
   try:
-    bigImgThumbUrl = KINOPOISK_MOVIE_BIG_THUMBNAIL % kinoPoiskId
+    bigImgThumbUrl = S.KINOPOISK_MOVIE_BIG_THUMBNAIL % kinoPoiskId
     response = common.getResponseFromHttpRequest(bigImgThumbUrl)
     if response is not None:
       contentType = response.headers['content-type']
@@ -758,8 +723,8 @@ def getPosterThumbnailBigOrSmall(kinoPoiskId):
         Log.Debug(' * found BIG thumb')
         thumb = common.Thumbnail(None,
           bigImgThumbUrl,
-          KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_WIDTH,
-          KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_HEIGHT,
+          S.KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_WIDTH,
+          S.KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_HEIGHT,
           0, # Index.
           1000) # Big thumb should have the highest initial score.
       else:
@@ -773,9 +738,9 @@ def getPosterThumbnailBigOrSmall(kinoPoiskId):
     Log.Debug(' * adding default (SMALL) thumb')
     # If there is no big title, add a small one.
     thumb = common.Thumbnail(None,
-      KINOPOISK_MOVIE_THUMBNAIL % kinoPoiskId,
-      KINOPOISK_MOVIE_THUMBNAIL_WIDTH,
-      KINOPOISK_MOVIE_THUMBNAIL_HEIGHT,
+      S.KINOPOISK_MOVIE_THUMBNAIL % kinoPoiskId,
+      S.KINOPOISK_MOVIE_THUMBNAIL_WIDTH,
+      S.KINOPOISK_MOVIE_THUMBNAIL_HEIGHT,
       0, # Index.
       0) # Initial score.
 

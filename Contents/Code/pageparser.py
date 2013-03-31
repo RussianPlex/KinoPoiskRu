@@ -23,13 +23,16 @@
 # @revision @REPOSITORY.REVISION@
 
 
-ENCODING_KINOPOISK_PAGE = 'cp1251'
-
 MAX_ACTORS = 10
 MAX_ALL_ACTORS = 50
 
 
 def parsePeoplePage(page, loadAllActors):
+  """ Parses a given people page. Parsed actors are stored in
+      data['actors'] as (name, role) string tuples.
+  """
+  # Find the <a> tag for the actors section header and
+  # grab all elements that follow it.
   infoBlocks = page.xpath('//a[@name="actor"]/following-sibling::*')
   count = 0
   actors = []
@@ -39,7 +42,9 @@ def parsePeoplePage(page, loadAllActors):
     maxActors =  MAX_ACTORS
   for infoBlock in infoBlocks:
     personBlockNodes = infoBlock.xpath('div[@class="actorInfo"]/div[@class="info"]/div[@class="name"]/*')
-    if (len(personBlockNodes) == 0 and count > 1) or count > maxActors:
+    if count > maxActors or (len(personBlockNodes) == 0 and count > 1):
+      # Stop on the first miss after second element - it probably means
+      # we got to the next section (<a> tag of the "Продюсеры" section).
       break
     count = count + 1
     if len(personBlockNodes) > 0:
