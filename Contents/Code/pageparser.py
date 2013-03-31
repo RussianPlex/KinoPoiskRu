@@ -27,33 +27,40 @@ MAX_ACTORS = 10
 MAX_ALL_ACTORS = 50
 
 
-def parsePeoplePage(page, loadAllActors):
-  """ Parses a given people page. Parsed actors are stored in
-      data['actors'] as (name, role) string tuples.
-  """
-  # Find the <a> tag for the actors section header and
-  # grab all elements that follow it.
-  infoBlocks = page.xpath('//a[@name="actor"]/following-sibling::*')
-  count = 0
-  actors = []
-  if loadAllActors:
-    maxActors =  MAX_ALL_ACTORS
-  else:
-    maxActors =  MAX_ACTORS
-  for infoBlock in infoBlocks:
-    personBlockNodes = infoBlock.xpath('div[@class="actorInfo"]/div[@class="info"]/div[@class="name"]/*')
-    if count > maxActors or (len(personBlockNodes) == 0 and count > 1):
-      # Stop on the first miss after second element - it probably means
-      # we got to the next section (<a> tag of the "Продюсеры" section).
-      break
-    count = count + 1
-    if len(personBlockNodes) > 0:
-      try:
-        actorName = personBlockNodes[0].text.encode('utf8')
-        roleNode = personBlockNodes[0].getparent().getparent()[1]
-        actorRole = roleNode.text.encode('utf8').strip().strip('. ')
-        actors.append((actorName, actorRole))
-      except:
-        pass
-  data = {'actors': actors}
-  return data
+class PeopleParser:
+  def __init__(self, logger):
+    self.log = logger
+
+  def parse(self, page, loadAllActors):
+    """ Parses a given people page. Parsed actors are stored in
+        data['actors'] as (name, role) string tuples.
+    """
+    # Find the <a> tag for the actors section header and
+    # grab all elements that follow it.
+    self.log.Info(' <<< Parsing people page...')
+    infoBlocks = page.xpath('//a[@name="actor"]/following-sibling::*')
+    count = 0
+    actors = []
+    if loadAllActors:
+      maxActors =  MAX_ALL_ACTORS
+    else:
+      maxActors =  MAX_ACTORS
+    for infoBlock in infoBlocks:
+      personBlockNodes = infoBlock.xpath('div[@class="actorInfo"]/div[@class="info"]/div[@class="name"]/*')
+      if count > maxActors or (len(personBlockNodes) == 0 and count > 1):
+        # Stop on the first miss after second element - it probably means
+        # we got to the next section (<a> tag of the "Продюсеры" section).
+        break
+      count = count + 1
+      if len(personBlockNodes) > 0:
+        try:
+          actorName = personBlockNodes[0].text.encode('utf8')
+          roleNode = personBlockNodes[0].getparent().getparent()[1]
+          actorRole = roleNode.text.encode('utf8').strip().strip('. ')
+          actors.append((actorName, actorRole))
+          self.log.Debug('   <<< parsed actor: name="%s", role="%s"...' % (actorName, actorRole))
+        except:
+          pass
+    data = {'actors': actors}
+    self.log.Info(' <<< Parsed %d actors.' % len(actors))
+    return data

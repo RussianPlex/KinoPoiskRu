@@ -29,6 +29,7 @@ import datetime, string, re, time, math, operator, unicodedata, hashlib, urllib
 import common, tmdb, pageparser, pluginsettings as S
 
 
+LOGGER = Log
 IS_DEBUG = False # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
 
 # Compiled regex matchers. TODO: move it to a pageparser?
@@ -51,12 +52,12 @@ PREFS = common.Preferences(
 
 
 def Start():
-  Log.Info('***** START ***** %s' % common.USER_AGENT)
+  LOGGER.Info('***** START ***** %s' % common.USER_AGENT)
   PREFS.readPluginPreferences()
 
 
 def ValidatePrefs():
-  Log.Info('***** updating preferences...')
+  LOGGER.Info('***** updating preferences...')
   PREFS.readPluginPreferences()
 
 
@@ -79,28 +80,28 @@ class KinoPoiskRuAgent(Agent.Movies):
         page id, title, year, and the score (how good we think the match
         is on the scale of 1 - 100).
     """
-    Log.Debug('SEARCH START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
+    LOGGER.Debug('SEARCH START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
     mediaName = media.name
     mediaYear = media.year
-    Log.Debug('searching for name="%s", year="%s", guid="%s", hash="%s"...' %
+    LOGGER.Debug('searching for name="%s", year="%s", guid="%s", hash="%s"...' %
         (str(mediaName), str(mediaYear), str(media.guid), str(media.hash)))
     # Получаем страницу поиска
-    Log.Debug('quering kinopoisk...')
+    LOGGER.Debug('quering kinopoisk...')
 
     encodedName = urllib.quote(mediaName.encode(S.ENCODING_KINOPOISK_PAGE))
-    Log.Debug('Loading page "%s"' % encodedName)
+    LOGGER.Debug('Loading page "%s"' % encodedName)
     page = common.getElementFromHttpRequest(S.KINOPOISK_SEARCH % encodedName, S.ENCODING_KINOPOISK_PAGE)
 
     if page is None:
-      Log.Warn('nothing was found on kinopoisk for media name "%s"' % mediaName)
+      LOGGER.Warn('nothing was found on kinopoisk for media name "%s"' % mediaName)
     else:
       # Если страница получена, берем с нее перечень всех названий фильмов.
-      Log.Debug('got a kinopoisk page to parse...')
+      LOGGER.Debug('got a kinopoisk page to parse...')
       divInfoElems = page.xpath('//self::div[@class="info"]/p[@class="name"]/a[contains(@href,"/level/1/film/")]/..')
       itemIndex = 0
       altTitle = None
       if len(divInfoElems):
-        Log.Debug('found %d results' % len(divInfoElems))
+        LOGGER.Debug('found %d results' % len(divInfoElems))
         for divInfoElem in divInfoElems:
           try:
             anchorFilmElem = divInfoElem.xpath('./a[contains(@href,"/level/1/film/")]/attribute::href')
@@ -108,7 +109,7 @@ class KinoPoiskRuAgent(Agent.Movies):
               # Parse kinopoisk movie title id, title and year.
               match = re.search('\/film\/(.+?)\/', anchorFilmElem[0])
               if match is None:
-                Log.Error('unable to parse movie title id')
+                LOGGER.Error('unable to parse movie title id')
               else:
                 kinoPoiskId = match.groups(1)[0]
                 title = common.getXpathRequiredNode(divInfoElem, './/a[contains(@href,"/level/1/film/")]/text()')
@@ -124,12 +125,12 @@ class KinoPoiskRuAgent(Agent.Movies):
                 score = common.scoreMediaTitleMatch(mediaName, mediaYear, title, altTitle, year, itemIndex)
                 results.Append(MetadataSearchResult(id=kinoPoiskId, name=title, year=year, lang=lang, score=score))
             else:
-              Log.Warn('unable to find film anchor elements for title "%s"' % mediaName)
+              LOGGER.Warn('unable to find film anchor elements for title "%s"' % mediaName)
           except:
             common.logException('failed to parse div.info container')
           itemIndex += 1
       else:
-        Log.Warn('nothing was found on kinopoisk for media name "%s"' % mediaName)
+        LOGGER.Warn('nothing was found on kinopoisk for media name "%s"' % mediaName)
         # TODO(zhenya): investigate if we need this clause at all (haven't seen this happening).
         # Если не нашли там текст названия, значит сайт сразу дал нам страницу с фильмом (хочется верить =)
         try:
@@ -145,7 +146,7 @@ class KinoPoiskRuAgent(Agent.Movies):
     results.Sort('score', descending=True)
     if IS_DEBUG:
       common.printSearchResults(results)
-    Log.Debug('SEARCH END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
+    LOGGER.Debug('SEARCH END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
 
   ##############################################################################
@@ -156,19 +157,19 @@ class KinoPoiskRuAgent(Agent.Movies):
        This method fetches an appropriate KinoPoisk page, parses it, and populates
        the passed media item record.
     """
-    Log.Debug('UPDATE START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
+    LOGGER.Debug('UPDATE START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
     part = media.items[0].parts[0]
     filename = part.file.decode(common.ENCODING_PLEX)
-    Log.Debug('filename="%s", guid="%s"' % (filename, metadata.guid))
+    LOGGER.Debug('filename="%s", guid="%s"' % (filename, metadata.guid))
 
     matcher = re.compile(r'//(\d+)\?')
     match = matcher.search(metadata.guid)
     if match is None:
-      Log.Error('KinoPoisk movie title id is not specified!')
+      LOGGER.Error('KinoPoisk movie title id is not specified!')
       raise Exception('ERROR: KinoPoisk movie title id is required!')
     else:
       kinoPoiskId = match.groups(1)[0]
-    Log.Debug('parsed KinoPoisk movie title id: "%s"' % kinoPoiskId)
+    LOGGER.Debug('parsed KinoPoisk movie title id: "%s"' % kinoPoiskId)
 
     self.updateMediaItem(metadata, kinoPoiskId)
 
@@ -176,13 +177,13 @@ class KinoPoiskRuAgent(Agent.Movies):
       imdbId = tmdb.findBestTitleMatch(metadata.title, metadata.year, lang)
       if imdbId is not None:
         metadata.id = imdbId
-    Log.Debug('UPDATE END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
+    LOGGER.Debug('UPDATE END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
 
   def updateMediaItem(self, metadata, kinoPoiskId):
     titlePage =  common.getElementFromHttpRequest(S.KINOPOISK_TITLE_PAGE_URL % kinoPoiskId, S.ENCODING_KINOPOISK_PAGE)
     if titlePage is not None:
-      Log.Debug('got a KinoPoisk page for movie title id: "%s"' % kinoPoiskId)
+      LOGGER.Debug('got a KinoPoisk page for movie title id: "%s"' % kinoPoiskId)
       try:
         resetMediaMetadata(metadata)
         parseTitleInfo(titlePage, metadata)                                       # Title. Название на русском языке.
@@ -205,7 +206,7 @@ def parseInfoTableTagAndUpdateMetadata(page, metadata):
       a css classname "info".
   """
   mainInfoTagRows = page.xpath('//table[@class="info"]/tr')
-  Log.Debug('parsed %d rows from the main info table tag' % len(mainInfoTagRows))
+  LOGGER.Debug('parsed %d rows from the main info table tag' % len(mainInfoTagRows))
   for infoRowElem in mainInfoTagRows:
     headerTypeElem =  infoRowElem.xpath('./td[@class="type"]/text()')
     if len(headerTypeElem) != 1:
@@ -241,17 +242,17 @@ def parseInfoTableTagAndUpdateMetadata(page, metadata):
          rowTypeKey == u'монтаж':
       # These tags are not supported yet.
       # TODO(zhenya): add some of these to the summary.
-      Log.Debug('skipping an unsupported row: %s' % rowTypeKey)
+      LOGGER.Debug('skipping an unsupported row: %s' % rowTypeKey)
       pass
     else:
-      Log.Warn('UNRECOGNIZED row type: %s' % rowTypeKey)
+      LOGGER.Warn('UNRECOGNIZED row type: %s' % rowTypeKey)
 
 
 def parseTitleInfo(page, metadata):
   title = page.xpath('//h1[@class="moviename-big"]/text()')[0].strip()
   if len(title):
     title = title.strip('- ')
-    Log.Debug(' ... parsed title: "%s"' % title)
+    LOGGER.Debug(' ... parsed title: "%s"' % title)
     metadata.title = title
 
 
@@ -260,21 +261,21 @@ def parseOriginalTitleInfo(page, metadata):
   if len(origTitle):
     origTitle = ' '.join(origTitle)
     origTitle = sanitizeString(origTitle).strip('- ')
-    Log.Debug(' ... parsed original title: "%s"' % origTitle)
+    LOGGER.Debug(' ... parsed original title: "%s"' % origTitle)
     metadata.original_title = origTitle
 
 
 def parseMainActorsFromLanding(page):
   actorsMap = []
   actors = page.xpath('//td[@class="actor_list"]/div/span')
-  Log.Debug(' ... parsed %d actor tags' % len(actors))
+  LOGGER.Debug(' ... parsed %d actor tags' % len(actors))
   for actorSpanTag in actors:
 #    actorList = actorSpanTag.xpath('./a[contains(@href,"/level/4/people/")]/text()')
     actorList = actorSpanTag.xpath('./a/text()')
     if len(actorList):
       for actor in actorList:
         if actor != u'...':
-          Log.Debug(' . . . . main actor: "%s"' % actor)
+          LOGGER.Debug(' . . . . main actor: "%s"' % actor)
           actorsMap.append(actor)
   return actorsMap
 
@@ -284,7 +285,7 @@ def parseSummaryInfo(page, metadata):
   if len(summaryParts):
     summary = ' '.join(summaryParts)
     summary = sanitizeString(summary).strip()
-    Log.Debug(' ... parsed summary: "%s..."' % summary[:30])
+    LOGGER.Debug(' ... parsed summary: "%s..."' % summary[:30])
     metadata.summary = summary
 
 
@@ -293,7 +294,7 @@ def parseRatingInfo(page, metadata, kinoPoiskId):
     ratingText = common.getXpathOptionalNode(page, './/*[@id="block_rating"]/div[1]/div[1]/a/span[1]/text()')
     if ratingText:
       metadata.rating = float(ratingText)
-      Log.Debug(' ... parsed rating "%s"' % ratingText)
+      LOGGER.Debug(' ... parsed rating "%s"' % ratingText)
   except:
     common.logException('unable to parse rating')
 
@@ -304,7 +305,7 @@ def parseIMDbRatingInfo(page, metadata, kinoPoiskId):
       ratingIMDbText = common.getXpathOptionalNode(page, './/*[@class="block_2"]/div[2]/text()')
       if ratingIMDbText and len(ratingIMDbText) < 50: # Sanity check.
         metadata.summary = ratingIMDbText + '. ' + metadata.summary
-        Log.Debug(' ... parsed IMDb rating "%s"' % ratingIMDbText)
+        LOGGER.Debug(' ... parsed IMDb rating "%s"' % ratingIMDbText)
   except:
     common.logException('unable to parse IMDb rating')
 
@@ -319,7 +320,7 @@ def parseExtendedRatingInfo(page, metadata, kinoPoiskId):
         if ratingText2 and len(ratingText2) < 50: # Sanity check.
           ratingText = ratingText + ' (' + ratingText2 + ')'
         metadata.summary = ratingText + '. ' + metadata.summary
-        Log.Debug(' ... parsed extended kinopoisk rating 1="%s", 2="%s"' % (str(ratingText1), str(ratingText2)))
+        LOGGER.Debug(' ... parsed extended kinopoisk rating 1="%s", 2="%s"' % (str(ratingText1), str(ratingText2)))
   except:
     common.logException('unable to parse extended kinopoisk rating')
 
@@ -332,17 +333,17 @@ def parseStudioInfo(metadata, kinoPoiskId):
   if len(studios):
     # Берем только первую студию.
     studio = studios[0].strip()
-    Log.Debug(' ... parsed studio: %s' % studio)
+    LOGGER.Debug(' ... parsed studio: %s' % studio)
     metadata.studio = studio
 
 
 def parseDirectorsInfo(infoRowElem, metadata):
   directors = infoRowElem.xpath('.//a/text()')
-  Log.Debug(' ... parsed %d director tags' % len(directors))
+  LOGGER.Debug(' ... parsed %d director tags' % len(directors))
   if len(directors):
     for director in directors:
       if director != u'...':
-        Log.Debug(' . . . . director: "%s"' % director)
+        LOGGER.Debug(' . . . . director: "%s"' % director)
         metadata.directors.add(director)
 
 
@@ -350,7 +351,7 @@ def parseYearInfo(infoRowElem, metadata):
   try:
     yearText = infoRowElem.xpath('.//a/text()')
     if len(yearText):
-      Log.Debug(' ... parsed year: %s' % yearText[0])
+      LOGGER.Debug(' ... parsed year: %s' % yearText[0])
       metadata.year = int(yearText[0])
   except:
     common.logException('unable to parse year')
@@ -358,22 +359,22 @@ def parseYearInfo(infoRowElem, metadata):
 
 def parseWritersInfo(infoRowElem, metadata):
   writers = infoRowElem.xpath('.//a/text()')
-  Log.Debug(' ... parsed %d writer tags' % len(writers))
+  LOGGER.Debug(' ... parsed %d writer tags' % len(writers))
   if len(writers):
     for writer in writers:
       if writer != u'...':
-        Log.Debug(' . . . . writer "%s"' % writer)
+        LOGGER.Debug(' . . . . writer "%s"' % writer)
         metadata.writers.add(writer)
 
 
 def parseGenresInfo(infoRowElem, metadata):
   genres = infoRowElem.xpath('.//a/text()')
-  Log.Debug(' ... parsed %d genre tags' % len(genres))
+  LOGGER.Debug(' ... parsed %d genre tags' % len(genres))
   if len(genres):
     for genre in genres:
       if genre != u'...':
         genre = genre.capitalize()
-        Log.Debug(' . . . . genre: "%s"' % genre)
+        LOGGER.Debug(' . . . . genre: "%s"' % genre)
         metadata.genres.add(genre)
 
 
@@ -383,7 +384,7 @@ def parseTaglineInfo(infoRowElem, metadata):
     tagline = ' '.join(taglineParts)
     tagline = sanitizeString(tagline)
     tagline = tagline.strip('- ')
-    Log.Debug(' ... parsed tagline: "%s"' % tagline[:20])
+    LOGGER.Debug(' ... parsed tagline: "%s"' % tagline[:20])
     metadata.tagline = tagline
 
 
@@ -394,7 +395,7 @@ def parseContentRatingInfo(infoRowElem, metadata):
     match = re.search('\/([^/.]+?)\.gif$',contentRatingElems[0])
     if match is not None:
       contentRating = match.groups(1)[0]
-      Log.Debug(' ... parsed content rating: "%s"' % str(contentRating))
+      LOGGER.Debug(' ... parsed content rating: "%s"' % str(contentRating))
       metadata.content_rating = contentRating
 
 
@@ -405,7 +406,7 @@ def parseDurationInfo(infoRowElem, metadata):
       match = MATCHER_MOVIE_DURATION.search(durationElems[0])
       if match is not None:
         duration = int(int(match.groups(1)[0])) * 1000 * 60
-        Log.Debug(' ... parsed duration: "%s"' % str(duration))
+        LOGGER.Debug(' ... parsed duration: "%s"' % str(duration))
         metadata.duration = duration
   except:
     common.logException('unable to parse duration')
@@ -420,7 +421,7 @@ def parseOriginallyAvailableInfo(infoRowElem, metadata):
         dd = '0' + dd
       mm = S.RU_MONTH[mm]
       originalDate = Datetime.ParseDate(yy + '-' + mm + '-' + dd).date()
-      Log.Debug(' ... parsed originally available date: "%s"' % str(originalDate))
+      LOGGER.Debug(' ... parsed originally available date: "%s"' % str(originalDate))
       metadata.originally_available_at = originalDate
   except:
     common.logException('unable to parse originally available date')
@@ -430,9 +431,9 @@ def parseCountryInfo(infoRowElem, metadata):
   countries = common.getXpathOptionalNodeStrings(infoRowElem, './/a/text()')
   for country in countries:
     metadata.countries.add(country)
-    Log.Debug(' . . . . country: "%s"' % str(country))
+    LOGGER.Debug(' . . . . country: "%s"' % str(country))
   if not len(countries):
-    Log.Debug(' . . . . countries: NONE')
+    LOGGER.Debug(' . . . . countries: NONE')
 
 
 def parsePeoplePageInfo(titlePage, metadata, kinoPoiskId):
@@ -443,7 +444,8 @@ def parsePeoplePageInfo(titlePage, metadata, kinoPoiskId):
   # Parse a dedicated 'people' page.
   parseAllActors = PREFS.getAllActors
   page = common.getElementFromHttpRequest(S.KINOPOISK_PEOPLE % kinoPoiskId, S.ENCODING_KINOPOISK_PAGE)
-  data = pageparser.parsePeoplePage(page, parseAllActors)
+
+  data = pageparser.PeopleParser(LOGGER).parse(page, parseAllActors)
   actorRoles = data['actors']
 
   # Parse main actors from the main title page.
@@ -471,16 +473,16 @@ def addActorToMetadata(metadata, actorName, roleName):
   role.actor = actorName
   if roleName is not None and roleName != '':
     role.role = roleName
-  Log.Debug(' . . . actor/role: ' + actorName + ' => ' + str(roleName))
+  LOGGER.Debug(' . . . actor/role: ' + actorName + ' => ' + str(roleName))
 
 
 def parsePostersInfo(metadata, kinoPoiskId):
   """ Fetches and populates posters metadata.
       Получение адресов постеров.
   """
-  Log.Debug('===== loading P O S T E R S ===== for title id "%s"...' % str(kinoPoiskId))
+  LOGGER.Debug('===== loading P O S T E R S ===== for title id "%s"...' % str(kinoPoiskId))
   if PREFS.maxPosters == 0:
-    Log.Debug(' ... SKIPPED.')
+    LOGGER.Debug(' ... SKIPPED.')
     metadata.posters.validate_keys([])
     return
 
@@ -503,9 +505,9 @@ def parseBackgroundArtInfo(metadata, kinoPoiskId):
   """ Fetches and populates background art metadata.
       Получение адресов задников.
   """
-  Log.Debug('===== loading B A C K G R O U N D  A R T ===== for title id "%s"...' % str(kinoPoiskId))
+  LOGGER.Debug('===== loading B A C K G R O U N D  A R T ===== for title id "%s"...' % str(kinoPoiskId))
   if PREFS.maxArt == 0:
-    Log.Debug(' ... SKIPPED.')
+    LOGGER.Debug(' ... SKIPPED.')
     metadata.art.validate_keys([])
     return
 
@@ -514,7 +516,7 @@ def parseBackgroundArtInfo(metadata, kinoPoiskId):
     maxPages = 2 # Even this is an extreme case, we should need too many pages.
   artPages = fetchImageDataPages(S.KINOPOISK_ART, kinoPoiskId, maxPages)
   if not len(artPages):
-    Log.Debug(' ... determined NO background art URLs')
+    LOGGER.Debug(' ... determined NO background art URLs')
     return
 
   # Получение урлов задников.
@@ -638,7 +640,7 @@ def parseImageDataFromPhotoTableTag(page, thumbnailList, isPoster, maxImagesToPa
     except:
       common.logException('unable to parse image URLs')
     if thumb is None:
-      Log.Debug('no URLs - skipping an image')
+      LOGGER.Debug('no URLs - skipping an image')
       continue
     else:
       common.scoreThumbnailResult(thumb, isPoster)
@@ -646,7 +648,7 @@ def parseImageDataFromPhotoTableTag(page, thumbnailList, isPoster, maxImagesToPa
          thumb.score < common.IMAGE_SCORE_BEST_THRESHOLD:
         continue
       thumbnailList.append(thumb)
-      Log.Debug('GOT URLs for an image: index=%d, thumb="%s", full="%s" (%sx%s)' %
+      LOGGER.Debug('GOT URLs for an image: index=%d, thumb="%s", full="%s" (%sx%s)' %
           (thumb.index, str(thumb.thumbImgUrl), str(thumb.fullImgUrl),
           str(thumb.fullImgWidth), str(thumb.fullImgHeight)))
       maxImagesToParse = maxImagesToParse - 1
@@ -676,7 +678,7 @@ def parseImageDataFromAnchorElement(anchorElem, index):
 
   # If we have no full size image URL, we could use the thumb's.
   if fullSizeUrl is None and thumbSizeUrl is not None:
-      Log.Debug('found no full size image, will use the thumbnail')
+      LOGGER.Debug('found no full size image, will use the thumbnail')
       fullSizeUrl = thumbSizeUrl
 
   if fullSizeUrl is None and thumbSizeUrl is None:
@@ -712,7 +714,7 @@ def parseImageElemDimensions(imageElem):
 
 
 def getPosterThumbnailBigOrSmall(kinoPoiskId):
-  Log.Debug(' * parsing thumbnail...')
+  LOGGER.Debug(' * parsing thumbnail...')
   thumb = None
   try:
     bigImgThumbUrl = S.KINOPOISK_MOVIE_BIG_THUMBNAIL % kinoPoiskId
@@ -720,7 +722,7 @@ def getPosterThumbnailBigOrSmall(kinoPoiskId):
     if response is not None:
       contentType = response.headers['content-type']
       if 'image/jpeg' == contentType:
-        Log.Debug(' * found BIG thumb')
+        LOGGER.Debug(' * found BIG thumb')
         thumb = common.Thumbnail(None,
           bigImgThumbUrl,
           S.KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_WIDTH,
@@ -728,14 +730,14 @@ def getPosterThumbnailBigOrSmall(kinoPoiskId):
           0, # Index.
           1000) # Big thumb should have the highest initial score.
       else:
-        Log.Debug(' * BIG thumb is NOT found')
+        LOGGER.Debug(' * BIG thumb is NOT found')
   except:
-    Log.Debug(' * UNABLE to fetch BIG thumb')
+    LOGGER.Debug(' * UNABLE to fetch BIG thumb')
     if IS_DEBUG:
       common.logException('failed to fetch BIG thumb')
 
   if thumb is None:
-    Log.Debug(' * adding default (SMALL) thumb')
+    LOGGER.Debug(' * adding default (SMALL) thumb')
     # If there is no big title, add a small one.
     thumb = common.Thumbnail(None,
       S.KINOPOISK_MOVIE_THUMBNAIL % kinoPoiskId,
