@@ -35,34 +35,15 @@ ENCODING_KINOPOISK_PAGE = 'cp1251'
 # Разные страницы сайта.
 KINOPOISK_SITE_BASE = 'http://www.kinopoisk.ru/'
 KINOPOISK_RESOURCE_BASE = 'http://st.kinopoisk.ru/'
-KINOPOISK_TITLE_PAGE_URL = KINOPOISK_SITE_BASE + 'level/1/film/%s/'
-KINOPOISK_PEOPLE = KINOPOISK_SITE_BASE + 'film/%s/cast/'
-KINOPOISK_STUDIO = KINOPOISK_SITE_BASE + 'level/91/film/%s/'
-KINOPOISK_POSTERS = KINOPOISK_SITE_BASE + 'level/17/film/%s/page/%d/'
+KINOPOISK_TITLE_PAGE_URL = KINOPOISK_SITE_BASE + 'film/%s/'
+KINOPOISK_CAST_PAGE_URL = KINOPOISK_SITE_BASE + 'film/%s/cast/'
+KINOPOISK_STUDIO_PAGE_URL = KINOPOISK_SITE_BASE + 'film/%s/studio/'
+KINOPOISK_THUMBNAIL_BIG_URL = KINOPOISK_RESOURCE_BASE + 'images/film_big/%s.jpg'
+KINOPOISK_THUMBNAIL_SMALL_URL = KINOPOISK_RESOURCE_BASE + 'images/film/%s.jpg'
+KINOPOISK_POSTERS_URL = KINOPOISK_SITE_BASE + 'film/%s/posters/page/%d/'
+
+
 KINOPOISK_ART = KINOPOISK_SITE_BASE + 'level/13/film/%s/page/%d/'
-KINOPOISK_MOVIE_THUMBNAIL = KINOPOISK_RESOURCE_BASE + 'images/film/%s.jpg'
-KINOPOISK_MOVIE_BIG_THUMBNAIL = KINOPOISK_RESOURCE_BASE + 'images/film_big/%s.jpg'
 
 # Страница поиска.
 KINOPOISK_SEARCH = KINOPOISK_SITE_BASE + '/index.php?first=no&kp_query=%s'
-
-KINOPOISK_MOVIE_THUMBNAIL_WIDTH = 130
-KINOPOISK_MOVIE_THUMBNAIL_HEIGHT = 168
-KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_WIDTH = 600
-KINOPOISK_MOVIE_THUMBNAIL_DEFAULT_HEIGHT = 1024
-
-# Русские месяца, пригодятся для определения дат.
-RU_MONTH = {
-  u'января': '01',
-  u'февраля': '02',
-  u'марта': '03',
-  u'апреля': '04',
-  u'мая': '05',
-  u'июня': '06',
-  u'июля': '07',
-  u'августа': '08',
-  u'сентября': '09',
-  u'октября': '10',
-  u'ноября': '11',
-  u'декабря': '12'
-}
