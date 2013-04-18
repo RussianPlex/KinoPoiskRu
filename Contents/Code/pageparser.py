@@ -246,16 +246,20 @@ class PageParser:
     # Получение ярлыка (большого если есть или маленького с главной страницы).
     thumb = self.fetchAndParsePosterThumbnailData(kinoPoiskId)
     if maxPosters > 1:
-      postersData = self.fetchAndParsePostersPage(kinoPoiskId)
+      postersData = self.fetchAndParsePostersPage(kinoPoiskId, maxPosters, 'posters')
       posters = postersData['posters']
       posters.append(thumb)
-      posters = self.sortPosters(posters, maxPosters)
+      # Sort results according to their score and chop out extraneous images. Сортируем результаты.
+      for poster in posters:
+        common.scoreThumbnailResult(poster, True)
+      posters = sorted(posters, key=lambda t : t.score, reverse=True)[0:maxPosters]
+      self.maybeLogImageResult(posters)
     else:
       posters = [thumb]
     return {'posters': posters}
 
-  def fetchAndParsePostersPage(self, kinoPoiskId):
-    """ Fetches and parses the first page of the movie posters.
+  def fetchAndParsePostersPage(self, kinoPoiskId, maxPosters, dataKey):
+    """ Fetches and parses the first page of the movie posters or stills.
     """
     # TODO(zhenya): maybe add support for loading subsequent poster pages.
     url = S.KINOPOISK_POSTERS_URL % (kinoPoiskId, 1) # We only care for the first page.
@@ -264,37 +268,36 @@ class PageParser:
     if posterPage is None:
       self.log.Debug('    NOT found!')
       return {}
-    return self.parsePostersPage(posterPage)
+    return self.parsePostersPage(posterPage, maxPosters, dataKey)
 
-  def parsePostersPage(self, page):
-    """ Parses a posters page.
+  def parsePostersPage(self, page, maxItems, dataKey):
+    """ Parses a posters page or a page with stills.
+        We have the same method to parse both since they are almost identical.
     """
-    self.log.Info(' <<< Parsing posters page...')
+    self.log.Info(' <<< Parsing %s page...' % dataKey)
     data = {}
     posters = []
 
     # Find all anchor tags that wrap small thumbnail img tags.
-    anchorElems = page.xpath('//table[@class="fotos" or @class="fotos fotos1" or @class="fotos fotos2"]//td/a')
+    anchorElems = page.xpath('//table[@class="fotos" or @class="fotos " or @class="fotos fotos1" or @class="fotos fotos2"]//td/a')
     ind = 1 # Start with 1 as 0 is reserved for the main thumb.
+    # Give it more images to choose from.
+    if maxItems < 3:
+      maxItems = 6
+    else:
+      maxItems = maxItems * 2
     for anchorElem in anchorElems:
-      thumb = self.parseImageDataFromAnchorElement(anchorElem, ind)
-      ind = ind + 1
+      thumb = self.parseImageDataFromAnchorElement(anchorElem, ind, dataKey)
       posters.append(thumb)
+      ind = ind + 1
+      if ind > maxItems:
+        break
 
-    data['posters'] = posters
-    self.log.Info(' <<< Parsed %d posters.' % len(posters))
+    data[dataKey] = posters
+    self.log.Info(' <<< Parsed %d %s.' % (len(posters), dataKey))
     return data
 
-  def sortPosters(self, posters, maxImages):
-    """ Scores and sorts the posters list.
-    """
-    for poster in posters:
-      common.scoreThumbnailResult(poster, True)
-
-    # Sort results according to their score and chop out extraneous images. Сортируем результаты.
-    return sorted(posters, key=lambda t : t.score, reverse=True)[0:maxImages]
-
-  def parseImageDataFromAnchorElement(self, anchorElem, index):
+  def parseImageDataFromAnchorElement(self, anchorElem, index, dataKey):
     """ Given an anchor element from a posters page,
         fetches the corresponding poster (individual) page and
         parses poster's data into a Thumbnail object.
@@ -310,7 +313,7 @@ class PageParser:
 
     # Fetch and parse the (individual) poster page.
     posterPageUrl = ensureAbsoluteUrl(anchorElem.get('href').strip())
-    self.log.Debug('Fetching a poster page: "%s".' % posterPageUrl)
+    self.log.Debug('fetching a %s page: "%s".' % (dataKey, posterPageUrl))
     posterPage = self.httpUtils.requestAndParseHtmlPage(posterPageUrl)
     if posterPage is not None:
       imageElem = common.getXpathOptionalNode(posterPage, '//img[@id="image"]')
@@ -332,6 +335,25 @@ class PageParser:
       self.log.Debug(' ... parsed a thumbnail:')
       print '    ' + str(thumb)
     return thumb
+
+  def fetchAndParseStillsData(self, kinoPoiskId, maxStills):
+    """ Fetches pages that contain fun art ("stills"), parses, scores,
+        and orders fun art data.
+    """
+    stillsData = self.fetchAndParsePostersPage(kinoPoiskId, maxStills, 'stills')
+    stills = stillsData['stills']
+    # Sort results according to their score and chop out extraneous images. Сортируем результаты.
+    for still in stills:
+      common.scoreThumbnailResult(still, False)
+    stills = sorted(stills, key=lambda t : t.score, reverse=True)[0:maxStills]
+    self.maybeLogImageResult(stills)
+    return {'stills': stills}
+
+  def maybeLogImageResult(self, thumbs):
+    if self.isDebug:
+      self.log.Debug('  ----- Scored and sorted thumbnails (%d):' % len(thumbs))
+      for thumb in thumbs:
+        self.log.Debug('  + score=%d, thumb="%s"' % (thumb.score, str(thumb.url)))
 
   def parseTitlePageInfoTable(self, data, page):
     """ Parses the main info <table> tag, which we find by a css classname "info".

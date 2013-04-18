@@ -41,9 +41,7 @@ KINOPOISK_STUDIO_PAGE_URL = KINOPOISK_SITE_BASE + 'film/%s/studio/'
 KINOPOISK_THUMBNAIL_BIG_URL = KINOPOISK_RESOURCE_BASE + 'images/film_big/%s.jpg'
 KINOPOISK_THUMBNAIL_SMALL_URL = KINOPOISK_RESOURCE_BASE + 'images/film/%s.jpg'
 KINOPOISK_POSTERS_URL = KINOPOISK_SITE_BASE + 'film/%s/posters/page/%d/'
-
-
-KINOPOISK_ART = KINOPOISK_SITE_BASE + 'level/13/film/%s/page/%d/'
+KINOPOISK_STILLS_URL = KINOPOISK_SITE_BASE + 'film/%s/stills/page/%d/'
 
 # Страница поиска.
 KINOPOISK_SEARCH = KINOPOISK_SITE_BASE + '/index.php?first=no&kp_query=%s'

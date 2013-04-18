@@ -30,12 +30,11 @@ import common, tmdb, pageparser, pluginsettings as S
 
 
 LOGGER = Log
-IS_DEBUG = False # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
+IS_DEBUG = True # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
 
 # Plugin preferences.
 # When changing default values here, also update the DefaultPrefs.json file.
 PREFS = common.Preferences(
-  (None, None),
   ('kinopoisk_pref_max_posters', S.KINOPOISK_PREF_DEFAULT_MAX_POSTERS),
   ('kinopoisk_pref_max_art', S.KINOPOISK_PREF_DEFAULT_MAX_ART),
   ('kinopoisk_pref_get_all_actors', S.KINOPOISK_PREF_DEFAULT_GET_ALL_ACTORS),
@@ -166,7 +165,7 @@ class KinoPoiskRuAgent(Agent.Movies):
     LOGGER.Debug('parsed KinoPoisk movie title id: "%s"' % kinoPoiskId)
 
     self.parser = pageparser.PageParser(
-      LOGGER, common.HttpUtils(S.ENCODING_KINOPOISK_PAGE, pageparser.USER_AGENT))
+      LOGGER, common.HttpUtils(S.ENCODING_KINOPOISK_PAGE, pageparser.USER_AGENT), IS_DEBUG)
     self.updateMediaItem(metadata, kinoPoiskId)
 
     if PREFS.imdbSupport:
@@ -187,7 +186,7 @@ class KinoPoiskRuAgent(Agent.Movies):
         self.parseStudioPageData(metadata, kinoPoiskId)                 # Studio. Студия.
         self.parseCastPageData(titlePage, metadata, kinoPoiskId)        # Actors, etc. Актёры. др.
         self.parsePostersPageData(metadata, kinoPoiskId)                # Posters. Постеры.
-#        parseBackgroundArtInfo(metadata, kinoPoiskId)                             # Background art. Задники.
+        self.parseStillsPageData(metadata, kinoPoiskId)                 # Background art. Stills.
       except:
         common.logException('failed to update metadata for id %s' % kinoPoiskId)
 
@@ -285,8 +284,32 @@ class KinoPoiskRuAgent(Agent.Movies):
           validNames.append(poster.url)
           index += 1
         except:
-          common.logException('Error generating preview for: "%s".' % str(img))
+          pass
       metadata.posters.validate_keys(validNames)
+
+  def parseStillsPageData(self, metadata, kinoPoiskId):
+    """ Fetches and populates background art metadata.
+        Получение адресов задников.
+    """
+    if PREFS.maxArt == 0:
+      metadata.art.validate_keys([])
+      return
+
+    data = self.parser.fetchAndParseStillsData(kinoPoiskId, PREFS.maxArt)
+    stills = data['stills']
+    if stills is not None and len(stills) > 0:
+      # Now, walk over the top N (<max) results and update metadata.
+      index = 0
+      validNames = list()
+      for still in stills:
+        try:
+          metadata.art[still.url] = Proxy.Preview(HTTP.Request(still.thumbUrl), sort_order = index)
+          validNames.append(still.url)
+          index += 1
+        except:
+          pass
+      metadata.art.validate_keys(validNames)
+
 
 # TODO(zhenya): move to page parser.
 def parseMainActorsFromLanding(page):
@@ -307,28 +330,6 @@ def addActorToMetadata(metadata, actorName, roleName):
   if roleName is not None and roleName != '':
     role.role = roleName
 
-def parseBackgroundArtInfo(metadata, kinoPoiskId):
-  """ Fetches and populates background art metadata.
-      Получение адресов задников.
-  """
-  LOGGER.Debug('===== loading B A C K G R O U N D  A R T ===== for title id "%s"...' % str(kinoPoiskId))
-  if PREFS.maxArt == 0:
-    LOGGER.Debug(' ... SKIPPED.')
-    metadata.art.validate_keys([])
-    return
-
-  maxPages = 1
-  if PREFS.maxArt >= 20:
-    maxPages = 2 # Even this is an extreme case, we should need too many pages.
-  artPages = fetchImageDataPages(S.KINOPOISK_ART, kinoPoiskId, maxPages)
-  if not len(artPages):
-    LOGGER.Debug(' ... determined NO background art URLs')
-    return
-
-  # Получение урлов задников.
-  updateImageMetadata(artPages, metadata, PREFS.maxArt, False, None)
-
-
 def resetMediaMetadata(metadata):
   metadata.genres.clear()
   metadata.directors.clear()
@@ -345,145 +346,3 @@ def resetMediaMetadata(metadata):
   metadata.originally_available_at = None
   metadata.original_title = ''
   metadata.duration = None
-
-
-def ensureAbsoluteUrl(url):
-  """ Returns an absolute URL (starts with http://)
-      pre-pending base kinoposk URL to the passed URL when necessary.
-  """
-  if url is None or len(url.strip()) < 10:
-    return None
-  url = url.strip()
-  if url[0:4] == 'http':
-    return url
-  return S.KINOPOISK_SITE_BASE + url.lstrip('/')
-
-
-def parseXpathElementValue(elem, path):
-  values = elem.xpath(path)
-  if len(values):
-    return values[0]
-  return None
-
-
-def updateImageMetadata(pages, metadata, maxImages, isPoster, thumb):
-  thumbnailList = []
-  if thumb is not None:
-    thumbnailList.append(thumb)
-  if maxImages > 1:
-    # Parsing URLs from the passed pages.
-    maxImagesToParse = maxImages - len(thumbnailList) + 2 # Give it a couple of extras to choose from.
-    for page in pages:
-      maxImagesToParse = parseImageDataFromPhotoTableTag(page, thumbnailList, isPoster, maxImagesToParse)
-      if not maxImagesToParse:
-        break
-
-  # Sort results according to their score and chop out extraneous images. Сортируем результаты.
-  thumbnailList = sorted(thumbnailList, key=lambda t : t.score, reverse=True)[0:maxImages]
-  if IS_DEBUG:
-    common.printImageSearchResults(thumbnailList)
-
-  # Now, walk over the top N (<max) results and update metadata.
-  if isPoster:
-    imagesContainer = metadata.posters
-  else:
-    imagesContainer = metadata.art
-  index = 0
-  validNames = list()
-  for result in thumbnailList:
-    if result.thumbUrl is None:
-      img = result.url
-    else:
-      img = result.thumbUrl
-    try:
-      imagesContainer[result.url] = Proxy.Preview(HTTP.Request(img), sort_order = index)
-      validNames.append(result.url)
-      index += 1
-    except:
-      common.logException('Error generating preview for: "%s".' % str(img))
-  imagesContainer.validate_keys(validNames)
-
-
-def fetchImageDataPages(urlTemplate, kinoPoiskId, maxPages):
-  pages = []
-  page = common.getElementFromHttpRequest(urlTemplate % (kinoPoiskId, 1), S.ENCODING_KINOPOISK_PAGE)
-  if page is not None:
-    pages.append(page)
-    if maxPages > 1:
-      anchorElems = page.xpath('//div[@class="navigator"]/ul/li[@class="arr"]/a')
-      if len(anchorElems):
-        nav = parseXpathElementValue(anchorElems[-1], './attribute::href')
-        match = re.search('page\/(\d+?)\/$', nav)
-        if match is not None:
-          try:
-            for pageIndex in range(2, int(match.groups(1)[0]) + 1):
-              page =  common.getElementFromHttpRequest(urlTemplate % (kinoPoiskId, pageIndex), S.ENCODING_KINOPOISK_PAGE)
-              if page is not None:
-                pages.append(page)
-                if pageIndex == maxPages:
-                  break
-          except:
-            common.logException('unable to parse image art page')
-  return pages
-
-
-def parseImageDataFromPhotoTableTag(page, thumbnailList, isPoster, maxImagesToParse):
-  anchorElems = page.xpath('//table[@class="fotos" or @class="fotos fotos1" or @class="fotos fotos2"]/tr/td/a')
-  currItemIndex = len(thumbnailList)
-  for anchorElem in anchorElems:
-    thumb = None
-    try:
-      thumb = parseImageDataFromAnchorElement(anchorElem, currItemIndex)
-      currItemIndex += 1
-    except:
-      common.logException('unable to parse image URLs')
-    if thumb is None:
-      LOGGER.Debug('no URLs - skipping an image')
-      continue
-    else:
-      common.scoreThumbnailResult(thumb, isPoster)
-      if PREFS.imageChoice == common.IMAGE_CHOICE_BEST and \
-         thumb.score < common.IMAGE_SCORE_BEST_THRESHOLD:
-        continue
-      thumbnailList.append(thumb)
-      LOGGER.Debug('GOT URLs for an image: index=%d, thumb="%s", full="%s" (%sx%s)' %
-          (thumb.index, str(thumb.thumbUrl), str(thumb.url),
-          str(thumb.width), str(thumb.height)))
-      maxImagesToParse = maxImagesToParse - 1
-      if not maxImagesToParse:
-        break
-  return maxImagesToParse
-
-
-def parseImageDataFromAnchorElement(anchorElem, index):
-  thumbSizeUrl = None
-  fullSizeUrl = None
-  fullSizeDimensions = None, None
-  fullSizeProxyPageUrl = anchorElem.get('href')
-  thumbSizeImgElem = parseXpathElementValue(anchorElem, './img')
-  if thumbSizeImgElem is not None:
-    thumbSizeUrl = thumbSizeImgElem.get('src')
-    if thumbSizeUrl is not None:
-      thumbSizeUrl = ensureAbsoluteUrl(thumbSizeUrl)
-
-  if fullSizeProxyPageUrl is not None:
-    fullSizeProxyPage = common.getElementFromHttpRequest(ensureAbsoluteUrl(fullSizeProxyPageUrl), S.ENCODING_KINOPOISK_PAGE)
-    if fullSizeProxyPage is not None:
-      imageElem = parseXpathElementValue(fullSizeProxyPage, '//img[@id="image"]')
-      if imageElem is not None:
-        fullSizeUrl = imageElem.get('src')
-        fullSizeDimensions = pageparser.parseImageElemDimensions(imageElem)
-
-  # If we have no full size image URL, we could use the thumb's.
-  if fullSizeUrl is None and thumbSizeUrl is not None:
-      LOGGER.Debug('found no full size image, will use the thumbnail')
-      fullSizeUrl = thumbSizeUrl
-
-  if fullSizeUrl is None and thumbSizeUrl is None:
-    return None
-  return common.Thumbnail(thumbSizeUrl,
-    ensureAbsoluteUrl(fullSizeUrl),
-    fullSizeDimensions[0],
-    fullSizeDimensions[1],
-    index,
-    0) # Initial score.
