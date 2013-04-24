@@ -415,14 +415,16 @@ class PageParser:
         if sanitizeChars is not None:
           item = item.strip(sanitizeChars)
         if isInteger:
+          item = removeWhiteSpace(item)
           data[key] = int(item)
         elif isFloat:
+          item = removeWhiteSpace(item)
           data[key] = float(item)
         else:
           data[key] = item
         self.log.Debug(' ... parsed "%s": "%s"' % (key, item))
     except:
-      self.logException(' ### unable to parse string')
+      self.logException(' ### unable to parse string for key "%s"' % key)
 
   def parseStringsFromText(self, data, elem, path, name, capitalize=False):
     result = []
@@ -506,8 +508,13 @@ def sanitizeString(msg):
   """ Функция для замены специальных символов.
   """
   res = msg.replace(u'\x85', u'...')
-  res = res.replace(u'\x97', u'-')
-  return res
+  res = res.replace(u'\xc2', u'')
+  return res.replace(u'\x97', u'-')
+
+def removeWhiteSpace(msg):
+  """ Removes "unusual" white space from a string.
+  """
+  return msg.replace(u'\xa0', u'')
 
 def parseImageElemDimensions(imageElem):
   """ Determines dimensions of a given image element and returns it as a (width, height) tuple,
