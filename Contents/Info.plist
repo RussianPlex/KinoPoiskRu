@@ -36,8 +36,8 @@
 
   <!-- Logging configuration. REMOVE for Release. -->
   <key>PlexPluginConsoleLogging</key>
-  <string>0</string> <!-- 0 - Off; 1 - On; -->
+  <string>1</string> <!-- 0 - Off; 1 - On; -->
   <key>PlexPluginLogLevel</key>
-  <string>Error</string>  <!-- Critical, Error, Warning, Info, Debug. -->
+  <string>Debug</string>  <!-- Critical, Error, Warning, Info, Debug. -->
 </dict>
 </plist>

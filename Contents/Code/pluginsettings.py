@@ -19,6 +19,7 @@
 # 02110-1301, USA.
 #
 # @author zhenya (Yevgeny Nyden)
+# @version @PLUGIN.REVISION@
 # @revision @REPOSITORY.REVISION@
 
 # Default plugin preferences. When modifying, please also change

@@ -18,14 +18,11 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #
-# @author ptath
-# @author Stillness-2
 # @author zhenya (Yevgeny Nyden)
-#
 # @version @PLUGIN.REVISION@
 # @revision @REPOSITORY.REVISION@
 
-import datetime, string, re, time, math, operator, unicodedata, hashlib, urllib
+import re, urllib
 import common, tmdb, pageparser, pluginsettings as S
 
 
@@ -181,7 +178,7 @@ class KinoPoiskRuAgent(Agent.Movies):
       # Don't update if the title page was failed to load.
       LOGGER.Debug('SUCCESS: got a KinoPoisk page for movie title id: "%s"' % kinoPoiskId)
       try:
-        resetMediaMetadata(metadata)
+        self.resetMediaMetadata(metadata)
         self.parseInfoTableTagAndUpdateMetadata(titlePage, metadata)    # Title, original title, ratings, and more.
         self.parseStudioPageData(metadata, kinoPoiskId)                 # Studio. Студия.
         self.parseCastPageData(titlePage, metadata, kinoPoiskId)        # Actors, etc. Актёры. др.
@@ -259,11 +256,11 @@ class KinoPoiskRuAgent(Agent.Movies):
     actorRoles = data['actors']
     if len(actorRoles):
       for (actor, role) in actorRoles:
-        addActorToMetadata(metadata, actor, role)
+        self.addActorToMetadata(metadata, actor, role)
     else:
       # Parse main actors from the main title page.
-      for mainActor in parseMainActorsFromLanding(titlePage):
-        addActorToMetadata(metadata, mainActor, '')
+      for mainActor in self.parser.parseMainActorsFromLanding(titlePage):
+        self.addActorToMetadata(metadata, mainActor, '')
 
   def parsePostersPageData(self, metadata, kinoPoiskId):
     """ Fetches and populates posters metadata.
@@ -310,39 +307,29 @@ class KinoPoiskRuAgent(Agent.Movies):
           pass
       metadata.art.validate_keys(validNames)
 
+  def addActorToMetadata(self, metadata, actorName, roleName):
+    """ Adds a new actor/role to a passed media metadata object.
+    """
+    role = metadata.roles.new()
+    role.actor = actorName
+    if roleName is not None and roleName != '':
+      role.role = roleName
 
-# TODO(zhenya): move to page parser.
-def parseMainActorsFromLanding(page):
-  actorsList = []
-  actors = page.xpath('//td[@class="actor_list"]/div/span')
-  for actorSpanTag in actors:
-#    actorList = actorSpanTag.xpath('./a[contains(@href,"/level/4/people/")]/text()')
-    actorList = actorSpanTag.xpath('./a/text()')
-    if len(actorList):
-      for actor in actorList:
-        if actor != u'...':
-          actorsList.append(actor)
-  return actorsList
-
-def addActorToMetadata(metadata, actorName, roleName):
-  role = metadata.roles.new()
-  role.actor = actorName
-  if roleName is not None and roleName != '':
-    role.role = roleName
-
-def resetMediaMetadata(metadata):
-  metadata.genres.clear()
-  metadata.directors.clear()
-  metadata.writers.clear()
-  metadata.roles.clear()
-  metadata.countries.clear()
-  metadata.collections.clear()
-  metadata.studio = ''
-  metadata.summary = ''
-  metadata.title = ''
-#        metadata.trivia = ''
-#        metadata.quotes = ''
-  metadata.year = None
-  metadata.originally_available_at = None
-  metadata.original_title = ''
-  metadata.duration = None
+  def resetMediaMetadata(self, metadata):
+    """ Resets all relevant fields on a passed media metadata object.
+    """
+    metadata.genres.clear()
+    metadata.directors.clear()
+    metadata.writers.clear()
+    metadata.roles.clear()
+    metadata.countries.clear()
+    metadata.collections.clear()
+    metadata.studio = ''
+    metadata.summary = ''
+    metadata.title = ''
+    #        metadata.trivia = ''
+    #        metadata.quotes = ''
+    metadata.year = None
+    metadata.originally_available_at = None
+    metadata.original_title = ''
+    metadata.duration = None

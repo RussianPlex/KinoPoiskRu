@@ -20,9 +20,10 @@
 # 02110-1301, USA.
 #
 # @author zhenya (Yevgeny Nyden)
+# @version @PLUGIN.REVISION@
 # @revision @REPOSITORY.REVISION@
 
-import sys, re, datetime
+import sys, re, datetime, string
 import common, pluginsettings as S
 
 MAX_ACTORS = 10
@@ -491,6 +492,16 @@ class PageParser:
     if self.isDebug:
       excInfo = sys.exc_info()
       self.log.Exception('exception: %s; cause: %s' % (excInfo[0], excInfo[1]))
+
+  def parseMainActorsFromLanding(self, page):
+    """
+    """
+    actorsList = []
+    actors = page.xpath('//div[@id="actorList"]/ul/li/a/text()')
+    for actor in actors:
+      if actor != u'...':
+        actorsList.append(string.capwords(actor.encode('utf8')))
+    return actorsList
 
 
 def ensureAbsoluteUrl(url):
