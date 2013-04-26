@@ -78,7 +78,7 @@ class PageParser:
     url = S.KINOPOISK_CAST_PAGE_URL % kinoPoiskId
     self.log.Info(' <<< Fetching cast page: "%s"...' % url)
     page = self.httpUtils.requestAndParseHtmlPage(url)
-    if not page:
+    if page is None:
       self.log.Debug(' <<< Not found!')
       return {}
     return self.parseCastPage(page, loadAllActors)
@@ -429,13 +429,11 @@ class PageParser:
 
   def parseStringsFromText(self, data, elem, path, name, capitalize=False):
     result = []
-    textElems = elem.xpath(path)
-    if len(textElems):
-      for textElem in textElems:
-        if textElem != u'...':
-          if capitalize:
-            textElem = textElem.capitalize()
-          result.append(textElem.encode('utf8'))
+    for textStr in elem.xpath(path):
+      if textStr != u'...':
+        if capitalize:
+          textStr = unicode(textStr).title()
+        result.append(textStr.encode('utf8'))
     self.log.Debug(' ... parsed %d "%s" tags.' % (len(result), name))
     if len(result):
       data[name] = result
@@ -494,13 +492,19 @@ class PageParser:
       self.log.Exception('exception: %s; cause: %s' % (excInfo[0], excInfo[1]))
 
   def parseMainActorsFromLanding(self, page):
-    """
+    """ Parses film actors from the main movie title page.
+        This method could be used if a title doesn't have a dedicated movie page.
+        @return Array.<string>
     """
     actorsList = []
     actors = page.xpath('//div[@id="actorList"]/ul/li/a/text()')
     for actor in actors:
-      if actor != u'...':
-        actorsList.append(string.capwords(actor.encode('utf8')))
+      try:
+        if actor != u'...':
+          actorsList.append(unicode(actor).title().encode('utf8'))
+      except:
+        self.logException(' ### unable to parse title page actor')
+    self.log.Debug(' ... parsed %d actors from the main page.' % len(actorsList))
     return actorsList
 
 
