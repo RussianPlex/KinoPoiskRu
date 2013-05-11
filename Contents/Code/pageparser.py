@@ -23,7 +23,7 @@
 # @version @PLUGIN.REVISION@
 # @revision @REPOSITORY.REVISION@
 
-import sys, re, datetime, string
+import sys, re, datetime, urllib
 import common, pluginsettings as S
 
 MAX_ACTORS = 10
@@ -127,6 +127,130 @@ class PageParser:
     self.log.Info(' <<< Parsed %d actors.' % len(actors))
     return data
 
+  def fetchAndParseSearchResultsFull(self, mediaName, mediaYear):
+    self.log.Info('Quering kinopoisk...')
+    results = []
+    encodedName = urllib.quote(mediaName.encode(S.ENCODING_KINOPOISK_PAGE))
+    self.log.Debug('Loading page "%s"' % encodedName)
+    page = self.httpUtils.requestAndParseHtmlPage(S.KINOPOISK_SEARCH % encodedName)
+
+    if page is None:
+      self.log.Warn(' ### nothing was found on kinopoisk for media name "%s"' % mediaName)
+    else:
+      # Если страница получена, берем с нее перечень всех названий фильмов.
+      self.log.Debug('got a kinopoisk page to parse...')
+      divInfoElems = page.xpath('//self::div[@class="info"]/p[@class="name"]/a[contains(@href,"/level/1/film/")]/..')
+      itemIndex = 0
+      altTitle = None
+      if len(divInfoElems):
+        self.log.Debug('found %d results' % len(divInfoElems))
+        for divInfoElem in divInfoElems:
+          try:
+            anchorFilmElem = divInfoElem.xpath('./a[contains(@href,"/level/1/film/")]/attribute::href')
+            if len(anchorFilmElem):
+              # Parse kinopoisk movie title id, title and year.
+              match = re.search('\/film\/(.+?)\/', anchorFilmElem[0])
+              if match is None:
+                self.log.Error('unable to parse movie title id')
+              else:
+                kinoPoiskId = match.groups(1)[0]
+                title = common.getXpathRequiredText(divInfoElem, './/a[contains(@href,"/level/1/film/")]/text()')
+                year = common.getXpathOptionalText(divInfoElem, './/span[@class="year"]/text()')
+                # Try to parse the alternative (original) title. Ignore failures.
+                # This is a <span> below the title <a> tag.
+                try:
+                  altTitle = common.getXpathOptionalText(divInfoElem, '../span[1]/text()')
+                  if altTitle is not None:
+                    altTitle = altTitle.split(',')[0].strip()
+                except:
+                  pass
+                score = common.scoreMediaTitleMatch(mediaName, mediaYear, title, altTitle, year, itemIndex)
+                results.append([kinoPoiskId, title, year, score])
+            else:
+              self.log.Warn('unable to find film anchor elements for title "%s"' % mediaName)
+          except:
+            self.logException('failed to parse div.info container')
+          itemIndex += 1
+      else:
+        self.log.Warn('nothing was found on kinopoisk for media name "%s"' % mediaName)
+        # TODO(zhenya): investigate if we need this clause at all (haven't seen this happening).
+        # Если не нашли там текст названия, значит сайт сразу дал нам страницу с фильмом (хочется верить =)
+        try:
+          title = page.xpath('//h1[@class="moviename-big"]/text()')[0].strip()
+          kinoPoiskId = re.search('\/film\/(.+?)\/', page.xpath('.//link[contains(@href, "/film/")]/attribute::href')[0]).groups(0)[0]
+          year = page.xpath('//a[contains(@href,"year")]/text()')[0].strip()
+          score = common.scoreMediaTitleMatch(mediaName, mediaYear, title, altTitle, year, itemIndex)
+          results.append([kinoPoiskId, title, year, score])
+        except:
+          self.logException('failed to parse a KinoPoisk page')
+    return results
+
+  def fetchAndParseSearchResults(self, mediaName, mediaYear):
+    """ @return [kinoPoiskId, title, year, score]
+    """
+    self.log.Info('Quering kinopoisk...')
+    results = []
+    encodedName = urllib.quote(mediaName.encode(S.ENCODING_KINOPOISK_PAGE))
+    self.log.Debug('Loading page "%s"' % encodedName)
+    page = self.httpUtils.requestAndParseHtmlPage(S.KINOPOISK_SEARCH_SIMPLE % encodedName)
+    if page is None:
+      self.log.Warn(' ### nothing was found on kinopoisk for media name "%s"' % mediaName)
+    else:
+      # Если страница получена, берем с нее перечень всех названий фильмов.
+      self.log.Debug('got a kinopoisk results page to parse...')
+      # Pick all divs with class "info" that have specific children (/p/a/ etc).
+#      divInfoElems = page.xpath('//self::div[@class="info"]/p[@class="name"]/a[contains(@href,"/level/1/film/")]/..')
+      divInfoElems = page.xpath('//div[@class="info"][p[@class="name"]/a[contains(@href,"/level/1/film/")]]')
+      itemIndex = 0
+      if len(divInfoElems):
+        self.log.Debug('found %d results (div info tags)' % len(divInfoElems))
+        for divInfoElem in divInfoElems:
+          try:
+            anchorFilmElem = divInfoElem.xpath('.//a[contains(@href,"/level/1/film/")]/attribute::href')
+            if len(anchorFilmElem):
+              # Parse kinopoisk movie title id, title and year.
+              match = re.search('\/film\/(.+?)\/', anchorFilmElem[0])
+              if match is None:
+                self.log.Error('unable to parse movie title id')
+              else:
+                kinoPoiskId = match.groups(1)[0]
+                title = common.getXpathRequiredText(divInfoElem, './/a[contains(@href,"/level/1/film/")]/text()')
+                year = common.getXpathOptionalText(divInfoElem, './/span[@class="year"]/text()')
+                # Try to parse the alternative (original) title. Ignore failures.
+                # This is a <span> below the title <a> tag.
+                altTitle = None
+                try:
+                  altTitleCandidate = common.getXpathOptionalText(divInfoElem, './/span[@class="gray"]/text()')
+                  if altTitleCandidate is not None:
+                    altTitleArr = altTitleCandidate.split(',')
+                    if (len(altTitleArr) > 1):
+                      altTitle = altTitleArr[0].strip()
+                except:
+                  pass
+                self.log.Debug(' ... kinoPoiskId="%s"; title="%s"; year="%s"...' % (kinoPoiskId, title, str(year)))
+                score = common.scoreMediaTitleMatch(mediaName, mediaYear, title, altTitle, year, itemIndex)
+                results.append([kinoPoiskId, title, year, score])
+            else:
+              self.log.Warn('unable to find film anchor elements for title "%s"' % mediaName)
+          except:
+            self.logException('failed to parse div.info container')
+          itemIndex += 1
+      else:
+        self.log.Warn('nothing was found on kinopoisk for media name "%s"' % mediaName)
+        # TODO(zhenya): investigate if we need this clause at all (haven't seen this happening).
+        # Если не нашли там текст названия, значит сайт сразу дал нам страницу с фильмом (хочется верить =)
+        try:
+          title = common.getXpathOptionalText(page, '//h1[@class="moviename-big"]/text()')
+          if title is not None:
+            kinoPoiskId = re.search('\/film\/(.+?)\/', page.xpath('.//link[contains(@href, "/film/")]/attribute::href')[0]).groups(0)[0]
+            year = page.xpath('//a[contains(@href,"year")]/text()')[0].strip()
+            altTitle = None # TODO: parse original title.
+            score = common.scoreMediaTitleMatch(mediaName, mediaYear, title, altTitle, year, itemIndex)
+            results.append([kinoPoiskId, title, year, score])
+        except:
+          self.logException('failed to parse a KinoPoisk page')
+    return results
+
   def fetchAndParseTitlePage(self, kinoPoiskId):
     """ Fetches a title page from KinoPoisk.ru and parses it via the
         #parseTitlePage method.
@@ -134,7 +258,7 @@ class PageParser:
     url = S.KINOPOISK_TITLE_PAGE_URL % kinoPoiskId
     self.log.Info(' <<< Fetching title page: "%s"...' % url)
     page = self.httpUtils.requestAndParseHtmlPage(url)
-    if not page:
+    if page is None:
       self.log.Debug(' <<< Not found!')
       return {}
     return self.parseTitlePage(page)
@@ -188,7 +312,7 @@ class PageParser:
     url = S.KINOPOISK_STUDIO_PAGE_URL % kinoPoiskId
     self.log.Info(' <<< Fetching studio page: "%s"...' % url)
     page = self.httpUtils.requestAndParseHtmlPage(url)
-    if not page:
+    if page is None:
       self.log.Debug(' <<< Not found!')
       return {}
     return self.parseStudioPage(page)
