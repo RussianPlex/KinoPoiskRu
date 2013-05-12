@@ -22,8 +22,7 @@
 # @version @PLUGIN.REVISION@
 # @revision @REPOSITORY.REVISION@
 
-import re, urllib
-import common, tmdb, pageparser, pluginsettings as S
+import re, common, tmdb, pageparser, pluginsettings as S
 
 
 LOGGER = Log
@@ -58,9 +57,11 @@ class KinoPoiskRuAgent(Agent.Movies):
   fallback_agent = False
   accepts_from = ['com.plexapp.agents.localmedia']
   contributes_to = None
+  parser = pageparser.PageParser(
+    LOGGER, common.HttpUtils(S.ENCODING_KINOPOISK_PAGE, pageparser.USER_AGENT), IS_DEBUG)
 
 
-  ##############################################################################
+##############################################################################
   ############################# S E A R C H ####################################
   ##############################################################################
   def search(self, results, media, lang, manual=False):
@@ -75,62 +76,11 @@ class KinoPoiskRuAgent(Agent.Movies):
     mediaYear = media.year
     LOGGER.Debug('searching for name="%s", year="%s", guid="%s", hash="%s"...' %
         (str(mediaName), str(mediaYear), str(media.guid), str(media.hash)))
-    # Получаем страницу поиска
-    LOGGER.Debug('quering kinopoisk...')
 
-    encodedName = urllib.quote(mediaName.encode(S.ENCODING_KINOPOISK_PAGE))
-    LOGGER.Debug('Loading page "%s"' % encodedName)
-    page = common.getElementFromHttpRequest(S.KINOPOISK_SEARCH % encodedName, S.ENCODING_KINOPOISK_PAGE)
-
-    if page is None:
-      LOGGER.Warn('nothing was found on kinopoisk for media name "%s"' % mediaName)
-    else:
-      # Если страница получена, берем с нее перечень всех названий фильмов.
-      LOGGER.Debug('got a kinopoisk page to parse...')
-      divInfoElems = page.xpath('//self::div[@class="info"]/p[@class="name"]/a[contains(@href,"/level/1/film/")]/..')
-      itemIndex = 0
-      altTitle = None
-      if len(divInfoElems):
-        LOGGER.Debug('found %d results' % len(divInfoElems))
-        for divInfoElem in divInfoElems:
-          try:
-            anchorFilmElem = divInfoElem.xpath('./a[contains(@href,"/level/1/film/")]/attribute::href')
-            if len(anchorFilmElem):
-              # Parse kinopoisk movie title id, title and year.
-              match = re.search('\/film\/(.+?)\/', anchorFilmElem[0])
-              if match is None:
-                LOGGER.Error('unable to parse movie title id')
-              else:
-                kinoPoiskId = match.groups(1)[0]
-                title = common.getXpathRequiredText(divInfoElem, './/a[contains(@href,"/level/1/film/")]/text()')
-                year = common.getXpathOptionalText(divInfoElem, './/span[@class="year"]/text()')
-                # Try to parse the alternative (original) title. Ignore failures.
-                # This is a <span> below the title <a> tag.
-                try:
-                  altTitle = common.getXpathOptionalText(divInfoElem, '../span[1]/text()')
-                  if altTitle is not None:
-                    altTitle = altTitle.split(',')[0].strip()
-                except:
-                  pass
-                score = common.scoreMediaTitleMatch(mediaName, mediaYear, title, altTitle, year, itemIndex)
-                results.Append(MetadataSearchResult(id=kinoPoiskId, name=title, year=year, lang=lang, score=score))
-            else:
-              LOGGER.Warn('unable to find film anchor elements for title "%s"' % mediaName)
-          except:
-            common.logException('failed to parse div.info container')
-          itemIndex += 1
-      else:
-        LOGGER.Warn('nothing was found on kinopoisk for media name "%s"' % mediaName)
-        # TODO(zhenya): investigate if we need this clause at all (haven't seen this happening).
-        # Если не нашли там текст названия, значит сайт сразу дал нам страницу с фильмом (хочется верить =)
-        try:
-          title = page.xpath('//h1[@class="moviename-big"]/text()')[0].strip()
-          kinoPoiskId = re.search('\/film\/(.+?)\/', page.xpath('.//link[contains(@href, "/film/")]/attribute::href')[0]).groups(0)[0]
-          year = page.xpath('//a[contains(@href,"year")]/text()')[0].strip()
-          score = common.scoreMediaTitleMatch(mediaName, mediaYear, title, altTitle, year, itemIndex)
-          results.Append(MetadataSearchResult(id=kinoPoiskId, name=title, year=year, lang=lang, score=score))
-        except:
-          common.logException('failed to parse a KinoPoisk page')
+    # Look for matches on KinoPisk (result is returned as an array of tuples [kinoPoiskId, title, year, score]).
+    titleResults = KinoPoiskRuAgent.parser.fetchAndParseSearchResults(mediaName, mediaYear)
+    for titleResult in titleResults:
+      results.Append(MetadataSearchResult(id=titleResult[0], name=titleResult[1], year=titleResult[2], lang=lang, score=titleResult[3]))
 
     # Sort results according to their score (Сортируем результаты).
     results.Sort('score', descending=True)
@@ -161,8 +111,6 @@ class KinoPoiskRuAgent(Agent.Movies):
       kinoPoiskId = match.groups(1)[0]
     LOGGER.Debug('parsed KinoPoisk movie title id: "%s"' % kinoPoiskId)
 
-    self.parser = pageparser.PageParser(
-      LOGGER, common.HttpUtils(S.ENCODING_KINOPOISK_PAGE, pageparser.USER_AGENT), IS_DEBUG)
     self.updateMediaItem(metadata, kinoPoiskId)
 
     if PREFS.imdbSupport:
@@ -191,7 +139,7 @@ class KinoPoiskRuAgent(Agent.Movies):
     """ Parses the main info <table> tag, which we find by
         a css classname "info".
     """
-    data = self.parser.parseTitlePage(page)
+    data = KinoPoiskRuAgent.parser.parseTitlePage(page)
     summaryPrefix = ''
     if 'title' in data:
       metadata.title = data['title']
@@ -241,25 +189,28 @@ class KinoPoiskRuAgent(Agent.Movies):
   def parseStudioPageData(self, metadata, kinoPoiskId):
     """ Parses the studio page.
     """
-    data = self.parser.fetchAndParseStudioPage(kinoPoiskId)
+    data = KinoPoiskRuAgent.parser.fetchAndParseStudioPage(kinoPoiskId)
     studios = data['studios']
-    if len(studios):
-      # Only one studio is supported.
-      metadata.studio = studios[0]
+    try:
+      if len(studios):
+        # Only one studio is supported.
+        metadata.studio = studios[0]
+    except:
+      pass
 
   def parseCastPageData(self, titlePage, metadata, kinoPoiskId):
     """ Parses people - mostly actors. Here (on this page)
         we have access to extensive information about all who participated in
         creating this movie.
     """
-    data = self.parser.fetchAndParseCastPage(kinoPoiskId, PREFS.getAllActors)
+    data = KinoPoiskRuAgent.parser.fetchAndParseCastPage(kinoPoiskId, PREFS.getAllActors)
     actorRoles = data['actors']
     if len(actorRoles):
       for (actor, role) in actorRoles:
         self.addActorToMetadata(metadata, actor, role)
     else:
       # Parse main actors from the main title page.
-      for mainActor in self.parser.parseMainActorsFromLanding(titlePage):
+      for mainActor in KinoPoiskRuAgent.parser.parseMainActorsFromLanding(titlePage):
         self.addActorToMetadata(metadata, mainActor, '')
 
   def parsePostersPageData(self, metadata, kinoPoiskId):
@@ -269,7 +220,7 @@ class KinoPoiskRuAgent(Agent.Movies):
       metadata.posters.validate_keys([])
       return
 
-    data = self.parser.fetchAndParsePostersData(kinoPoiskId, PREFS.maxPosters)
+    data = KinoPoiskRuAgent.parser.fetchAndParsePostersData(kinoPoiskId, PREFS.maxPosters)
     posters = data['posters']
     if posters is not None and len(posters) > 0:
       # Now, walk over the top N (<max) results and update metadata.
@@ -292,7 +243,7 @@ class KinoPoiskRuAgent(Agent.Movies):
       metadata.art.validate_keys([])
       return
 
-    data = self.parser.fetchAndParseStillsData(kinoPoiskId, PREFS.maxArt)
+    data = KinoPoiskRuAgent.parser.fetchAndParseStillsData(kinoPoiskId, PREFS.maxArt)
     stills = data['stills']
     if stills is not None and len(stills) > 0:
       # Now, walk over the top N (<max) results and update metadata.
@@ -310,10 +261,13 @@ class KinoPoiskRuAgent(Agent.Movies):
   def addActorToMetadata(self, metadata, actorName, roleName):
     """ Adds a new actor/role to a passed media metadata object.
     """
-    role = metadata.roles.new()
-    role.actor = actorName
-    if roleName is not None and roleName != '':
-      role.role = roleName
+    try:
+      role = metadata.roles.new()
+      role.actor = actorName
+      if roleName is not None and roleName != '':
+        role.role = roleName
+    except:
+      pass
 
   def resetMediaMetadata(self, metadata):
     """ Resets all relevant fields on a passed media metadata object.

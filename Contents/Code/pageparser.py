@@ -46,6 +46,7 @@ MOVIE_THUMBNAIL_BIG_HEIGHT = 1024
 # Compiled regex matchers.
 MATCHER_WIDTH_FROM_STYLE = re.compile('.*width\s*:\s*(\d+)px.*', re.UNICODE)
 MATCHER_HEIGHT_FROM_STYLE = re.compile('.*height\s*:\s*(\d+)px.*', re.UNICODE)
+MATCHER_LEADING_NONALPHA = re.compile('^[\s\d\.\(\)]*', re.UNICODE | re.MULTILINE)
 
 
 # Русские месяца, пригодятся для определения дат.
@@ -186,7 +187,10 @@ class PageParser:
     return results
 
   def fetchAndParseSearchResults(self, mediaName, mediaYear):
-    """ @return [kinoPoiskId, title, year, score]
+    """ Searches for movie titles on KinoPoisk.
+        @param mediaName Movie title parsed from a filename.
+        @param mediaName Movie year parsed from a filename.
+        @return Array of tuples: [kinoPoiskId, title, year, score]
     """
     self.log.Info('Quering kinopoisk...')
     results = []
@@ -222,9 +226,11 @@ class PageParser:
                 try:
                   altTitleCandidate = common.getXpathOptionalText(divInfoElem, './/span[@class="gray"]/text()')
                   if altTitleCandidate is not None:
-                    altTitleArr = altTitleCandidate.split(',')
-                    if (len(altTitleArr) > 1):
-                      altTitle = altTitleArr[0].strip()
+                    # Strip any non alpha character in front (unfortunately, this may also remove a leading part
+                    # of a movie title if it starts with a digit).
+                    altTitleCandidate = MATCHER_LEADING_NONALPHA.sub('', altTitleCandidate).rstrip()
+                    if len(altTitleCandidate) > 0:
+                      altTitle = altTitleCandidate
                 except:
                   pass
                 self.log.Debug(' ... kinoPoiskId="%s"; title="%s"; year="%s"...' % (kinoPoiskId, title, str(year)))
