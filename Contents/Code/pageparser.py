@@ -507,7 +507,7 @@ class PageParser:
       elif rowTypeKey == u'сценарий':
         self.parseStringsFromText(data, infoRowElem, './/a/text()', 'writers')
       elif rowTypeKey == u'жанр':
-        self.parseStringsFromText(data, infoRowElem, './/a/text()', 'genres', True)
+        self.parseStringsFromText(data, infoRowElem, './/a[contains(@href,"/lists/")]/text()', 'genres', True)
       elif rowTypeKey == u'рейтинг MPAA':
         self.parseContentRatingInfo(data, infoRowElem)
       elif rowTypeKey == u'возраст':
@@ -564,7 +564,7 @@ class PageParser:
         if capitalize:
           textStr = unicode(textStr).title()
         result.append(textStr.encode('utf8'))
-    self.log.Debug(' ... parsed %d "%s" tags.' % (len(result), name))
+    self.log.Debug(' ... parsed %d "%s" tags %s.' % (len(result), name, common.arrayToUnicodeString(result)))
     if len(result):
       data[name] = result
 
