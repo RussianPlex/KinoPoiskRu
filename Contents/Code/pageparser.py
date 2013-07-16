@@ -391,6 +391,7 @@ class PageParser:
 
   def fetchAndParsePostersPage(self, kinoPoiskId, maxPosters, dataKey):
     """ Fetches and parses the first page of the movie posters or stills.
+        @param {number} maxPosters Max number of posters (may still return more!).
     """
     # TODO(zhenya): maybe add support for loading subsequent poster pages.
     url = S.KINOPOISK_POSTERS_URL % (kinoPoiskId, 1) # We only care for the first page.
@@ -404,6 +405,7 @@ class PageParser:
   def parsePostersPage(self, page, maxItems, dataKey):
     """ Parses a posters page or a page with stills.
         We have the same method to parse both since they are almost identical.
+        @param {number} maxItems Max number of items (may still return more!).
     """
     self.log.Info(' <<< Parsing %s page...' % dataKey)
     data = {}
@@ -416,11 +418,11 @@ class PageParser:
     if maxItems < 3:
       maxItems = 6
     else:
-      maxItems = maxItems * 2
+      maxItems *= 2
     for anchorElem in anchorElems:
       thumb = self.parseImageDataFromAnchorElement(anchorElem, ind, dataKey)
       posters.append(thumb)
-      ind = ind + 1
+      ind += 1
       if ind > maxItems:
         break
 
