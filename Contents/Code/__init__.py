@@ -157,6 +157,8 @@ class KinoPoiskRuAgent(Agent.Movies):
       if 'imdbRatingCount' in data:
         summaryPrefix = summaryPrefix + ' (' + str(data['imdbRatingCount']) + ')'
       summaryPrefix = summaryPrefix + '. '
+    if summaryPrefix != '':
+      summaryPrefix += '\n'
     if 'summary' in data:
       metadata.summary = summaryPrefix + data['summary']
     else:
