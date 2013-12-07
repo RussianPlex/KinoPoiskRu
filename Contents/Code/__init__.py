@@ -26,7 +26,7 @@ import re, common, tmdb, pageparser, pluginsettings as S
 
 
 LOGGER = Log
-IS_DEBUG = True # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
+IS_DEBUG = False # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
 
 # Plugin preferences.
 # When changing default values here, also update the DefaultPrefs.json file.
@@ -84,8 +84,6 @@ class KinoPoiskRuAgent(Agent.Movies):
 
     # Sort results according to their score (Сортируем результаты).
     results.Sort('score', descending=True)
-    if IS_DEBUG:
-      common.printSearchResults(results)
     LOGGER.Debug('SEARCH END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
 
