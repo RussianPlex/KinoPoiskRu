@@ -2,7 +2,7 @@
 #
 # Russian metadata plugin for Plex, which uses http://www.kinopoisk.ru/ to get the tag data.
 # Плагин для обновления информации о фильмах использующий КиноПоиск (http://www.kinopoisk.ru/).
-# Copyright (C) 2013 Zhenya Nyden
+# Copyright (C) 2013 Yevgeny Nyden
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #
 # Global definitions for KinoPoiskRu plugin.
-# Copyright (C) 2013 Zhenya Nyden
+# Copyright (C) 2013 Yevgeny Nyden
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
