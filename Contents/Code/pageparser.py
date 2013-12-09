@@ -159,7 +159,7 @@ class PageParser:
             results.append(origResult)
         else:
           results.append(result)
-      results += resultsMap.viewvalues()
+      results.extend(resultsMap.viewvalues())
 
     # Sort all results based on their score.
     results.sort(key=operator.itemgetter(3))
