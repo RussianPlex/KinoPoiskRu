@@ -408,7 +408,7 @@ class PageParser:
     if maxItems < 3:
       maxItems = 6
     else:
-      maxItems *= 2
+      maxItems = maxItems * 2
     for anchorElem in anchorElems:
       thumb = self.parseImageDataFromAnchorElement(anchorElem, ind, dataKey)
       posters.append(thumb)
