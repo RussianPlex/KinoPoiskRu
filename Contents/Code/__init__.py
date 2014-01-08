@@ -61,7 +61,7 @@ class KinoPoiskRuAgent(Agent.Movies):
     LOGGER, common.HttpUtils(S.ENCODING_KINOPOISK_PAGE, pageparser.USER_AGENT), IS_DEBUG)
 
 
-##############################################################################
+  ##############################################################################
   ############################# S E A R C H ####################################
   ##############################################################################
   def search(self, results, media, lang, manual=False):
