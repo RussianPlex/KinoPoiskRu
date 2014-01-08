@@ -494,7 +494,7 @@ class PageParser:
         self.parseStringsFromText(data, infoRowElem, './/a/text()', 'countries')
       elif rowTypeKey == u'слоган':
         self.parseStringFromText(data, infoRowElem, './td[2]/text()', 'tagline', '«»-')
-      elif rowTypeKey == u'режиссер' or rowTypeKey == u'директор фильма':
+      elif rowTypeKey == u'режиссер':
         self.parseStringsFromText(data, infoRowElem, './/a/text()', 'directors')
       elif rowTypeKey == u'сценарий':
         self.parseStringsFromText(data, infoRowElem, './/a/text()', 'writers')
