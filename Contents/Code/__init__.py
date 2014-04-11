@@ -124,7 +124,7 @@ class KinoPoiskRuAgent(Agent.Movies):
       # Don't update if the title page was failed to load.
       LOGGER.Debug('SUCCESS: got a KinoPoisk page for movie title id: "%s"' % kinoPoiskId)
       try:
-        self.resetMediaMetadata(metadata)
+        common.resetMediaMetadata(metadata)
         self.parseInfoTableTagAndUpdateMetadata(titlePage, metadata)    # Title, original title, ratings, and more.
         self.parseStudioPageData(metadata, kinoPoiskId)                 # Studio. Студия.
         self.parseCastPageData(titlePage, metadata, kinoPoiskId)        # Actors, etc. Актёры. др.
@@ -268,22 +268,3 @@ class KinoPoiskRuAgent(Agent.Movies):
         role.role = roleName
     except:
       pass
-
-  def resetMediaMetadata(self, metadata):
-    """ Resets all relevant fields on a passed media metadata object.
-    """
-    metadata.genres.clear()
-    metadata.directors.clear()
-    metadata.writers.clear()
-    metadata.roles.clear()
-    metadata.countries.clear()
-    metadata.collections.clear()
-    metadata.studio = ''
-    metadata.summary = ''
-    metadata.title = ''
-    #        metadata.trivia = ''
-    #        metadata.quotes = ''
-    metadata.year = None
-    metadata.originally_available_at = None
-    metadata.original_title = ''
-    metadata.duration = None
