@@ -124,7 +124,6 @@ class KinoPoiskRuAgent(Agent.Movies):
       # Don't update if the title page was failed to load.
       LOGGER.Debug('SUCCESS: got a KinoPoisk page for movie title id: "%s"' % kinoPoiskId)
       try:
-        common.resetMediaMetadata(metadata)
         self.parseInfoTableTagAndUpdateMetadata(titlePage, metadata)    # Title, original title, ratings, and more.
         self.parseStudioPageData(metadata, kinoPoiskId)                 # Studio. Студия.
         self.parseCastPageData(titlePage, metadata, kinoPoiskId)        # Actors, etc. Актёры. др.
