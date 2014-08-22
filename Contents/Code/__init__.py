@@ -2,7 +2,7 @@
 #
 # Russian metadata plugin for Plex, which uses http://www.kinopoisk.ru/ to get the tag data.
 # Плагин для обновления информации о фильмах использующий КиноПоиск (http://www.kinopoisk.ru/).
-# Copyright (C) 2012  Yevgeny Nyden
+# Copyright (C) 2014  Yevgeny Nyden
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -22,11 +22,11 @@
 # @version @PLUGIN.REVISION@
 # @revision @REPOSITORY.REVISION@
 
-import re, common, tmdb, pageparser, pluginsettings as S
+import re, common, pageparser, pluginsettings as S
 
 
 LOGGER = Log
-IS_DEBUG = False # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
+IS_DEBUG = True # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
 
 # Plugin preferences.
 # When changing default values here, also update the DefaultPrefs.json file.
@@ -34,7 +34,6 @@ PREFS = common.Preferences(
   ('kinopoisk_pref_max_posters', S.KINOPOISK_PREF_DEFAULT_MAX_POSTERS),
   ('kinopoisk_pref_max_art', S.KINOPOISK_PREF_DEFAULT_MAX_ART),
   ('kinopoisk_pref_get_all_actors', S.KINOPOISK_PREF_DEFAULT_GET_ALL_ACTORS),
-  ('kinopoisk_pref_imdb_support', S.KINOPOISK_PREF_DEFAULT_IMDB_SUPPORT),
   (None, None),
   ('kinopoisk_pref_imdb_rating', S.KINOPOISK_PREF_DEFAULT_IMDB_RATING),
   ('kinopoisk_pref_kp_rating', S.KINOPOISK_PREF_DEFAULT_KP_RATING))
@@ -111,10 +110,6 @@ class KinoPoiskRuAgent(Agent.Movies):
 
     self.updateMediaItem(metadata, kinoPoiskId)
 
-    if PREFS.imdbSupport:
-      imdbId = tmdb.findBestTitleMatch(metadata.title, metadata.year, lang)
-      if imdbId is not None:
-        metadata.id = imdbId
     LOGGER.Debug('UPDATE END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
 

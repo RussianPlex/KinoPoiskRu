@@ -168,7 +168,7 @@ class PageParser:
       self.log.Debug('Search produced %d results:' % len(results))
       index = -1
       for result in results:
-        index += 1
+        index = index + 1
         self.log.Debug(' ... %d: id="%s", name="%s", year="%s", score="%d".' %
             (index, result[0], result[1], str(result[2]), result[3]))
     return results
