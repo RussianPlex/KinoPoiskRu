@@ -1,27 +1,14 @@
 # -*- coding: utf-8 -*-
-#
-# Russian metadata plugin for Plex, which uses http://www.kinopoisk.ru/ to get the tag data.
-# Плагин для обновления информации о фильмах использующий КиноПоиск (http://www.kinopoisk.ru/).
-# Copyright (C) 2013 Yevgeny Nyden
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-# 02110-1301, USA.
-#
-# @author zhenya (Yevgeny Nyden)
-# @version @PLUGIN.REVISION@
-# @revision @REPOSITORY.REVISION@
+
+"""
+Russian metadata plugin for Plex, which uses http://www.kinopoisk.ru/ to get the tag data.
+Плагин для обновления информации о фильмах использующий КиноПоиск (http://www.kinopoisk.ru/).
+
+@version @PLUGIN.REVISION@
+@revision @REPOSITORY.REVISION@
+@copyright (c) 2014 by Yevgeny Nyden
+@license GPLv3, see LICENSE for more details
+"""
 
 import sys, re, datetime, urllib, operator
 import common, pluginsettings as S
@@ -169,8 +156,8 @@ class PageParser:
       index = -1
       for result in results:
         index = index + 1
-        self.log.Debug(' ... %d: id="%s", name="%s", year="%s", score="%d".' %
-            (index, result[0], result[1], str(result[2]), result[3]))
+        self.log.Debug(' ... %d: score="%d", id="%s", name="%s", year="%s".' %
+            (index, result[3], result[0], result[1], str(result[2])))
     return results
 
 
@@ -238,7 +225,7 @@ class PageParser:
               itemAltTitle = altTitleCandidate
         except:
           pass
-        self.log.Debug(' ... kinoPoiskId="%s"; title="%s"; year="%s"...' % (itemKinoPoiskId, itemTitle, str(itemYear)))
+#        self.log.Debug(' ... kinoPoiskId="%s"; title="%s"; year="%s"...' % (itemKinoPoiskId, itemTitle, str(itemYear)))
         itemScore = common.scoreMediaTitleMatch(mediaName, mediaYear, itemTitle, itemAltTitle, itemYear, itemIndex)
         results.append([itemKinoPoiskId, itemTitle, itemYear, itemScore])
       except:
@@ -330,97 +317,84 @@ class PageParser:
     """ Attempts to fetch the main poster large thumbnail (film poster on the title page)
         and parses the response via the #parsePosterThumbnailData method.
     """
-    imageResponse = self.httpUtils.requestImageJpeg(S.KINOPOISK_THUMBNAIL_BIG_URL % kinoPoiskId)
-    return self.parsePosterThumbnailData(imageResponse, kinoPoiskId)
-
-  def parsePosterThumbnailData(self, imageResponse, kinoPoiskId):
-    """ Creates a Thumbnail that represents the main (promo) poster thumb.
-        If there ... that is eitherParses image response for the main big poster image and
-        returns parsed data as a Thumbnail object.
-    """
-    thumb = None
-    if imageResponse is not None:
-      if 'image/jpeg' == imageResponse.headers['content-type']:
-        thumb = common.Thumbnail(S.KINOPOISK_THUMBNAIL_BIG_URL % kinoPoiskId,
-          S.KINOPOISK_THUMBNAIL_BIG_URL % kinoPoiskId,
-          MOVIE_THUMBNAIL_BIG_WIDTH,
-          MOVIE_THUMBNAIL_BIG_HEIGHT,
-          0, # Index - main thumb is always the first one.
-          1000) # Big thumb should have the highest initial score.
-        self.log.Info(' <<< Big thumb is found.')
-    if thumb is None:
-      self.log.Info(' <<< Big thumb is not found, adding a small one...')
-      thumb = common.Thumbnail(S.KINOPOISK_THUMBNAIL_SMALL_URL % kinoPoiskId,
-        S.KINOPOISK_THUMBNAIL_SMALL_URL % kinoPoiskId,
-        MOVIE_THUMBNAIL_SMALL_WIDTH,
-        MOVIE_THUMBNAIL_SMALL_HEIGHT,
+    bigThumbUrl = S.KINOPOISK_THUMBNAIL_BIG_URL % kinoPoiskId
+    imageResponse = self.httpUtils.requestImageJpeg(bigThumbUrl)
+    mainPoster = None
+    if imageResponse is not None and 'image/jpeg' == imageResponse.headers['content-type']:
+      mainPoster = common.Thumbnail(bigThumbUrl,
+        bigThumbUrl,
+        MOVIE_THUMBNAIL_BIG_WIDTH,
+        MOVIE_THUMBNAIL_BIG_HEIGHT,
         0, # Index - main thumb is always the first one.
-        0) # Initial score.
-    return thumb
+        S.KINOPOISK_THUMBNAIL_BIG_SCORE_BONUS, # Big thumb should have a score boost.
+        'ru') # We are sure about the main poster's locale.
+      self.log.Info(' <<< Big thumb is found.')
+    else:
+      smallThumbUrl = S.KINOPOISK_THUMBNAIL_SMALL_URL % kinoPoiskId
+      imageResponse = self.httpUtils.requestImageJpeg(smallThumbUrl)
+      if imageResponse is not None and 'image/jpeg' == imageResponse.headers['content-type']:
+        self.log.Info(' <<< Big thumb is not found, adding a small one...')
+        mainPoster = common.Thumbnail(smallThumbUrl,
+          smallThumbUrl,
+          MOVIE_THUMBNAIL_SMALL_WIDTH,
+          MOVIE_THUMBNAIL_SMALL_HEIGHT,
+          0, # Index - main thumb is always the first one.
+          0, # Initial score.
+          'ru')  # We are sure about the main thumb locale.
+    return mainPoster
 
-  def fetchAndParsePostersData(self, kinoPoiskId, maxPosters):
+  def fetchAndParsePostersData(self, kinoPoiskId, maxPosters, lang):
     """ Fetches various poster pages, parses, scores, and orders posters data.
-        This will include parsing poster from the main title page
-        and from the posters (first) page.
-        This is the master poster parsing method.
+        This will include parsing poster from the main title page and possibly
+        from the posters (first) page.
     """
     # Получение ярлыка (большого если есть или маленького с главной страницы).
-    thumb = self.fetchAndParsePosterThumbnailData(kinoPoiskId)
+    mainPoster = self.fetchAndParsePosterThumbnailData(kinoPoiskId)
     if maxPosters > 1:
-      postersData = self.fetchAndParsePostersPage(kinoPoiskId, maxPosters, 'posters')
-      posters = postersData['posters']
-      posters.append(thumb)
-      # Sort results according to their score and chop out extraneous images. Сортируем результаты.
-      for poster in posters:
-        common.scoreThumbnailResult(poster, True)
-      posters = sorted(posters, key=lambda t : t.score, reverse=True)[0:maxPosters]
-      self.maybeLogImageResult(posters)
+      url = S.KINOPOISK_COVERS_URL % kinoPoiskId
+      posters = self.fetchAndParseImagesPage(url, maxPosters)
     else:
-      posters = [thumb]
-    return {'posters': posters}
+      posters = []
+    if mainPoster:
+      posters.append(mainPoster)
+    for poster in posters:
+      common.scoreThumbnailResult(poster, True, lang)
+    return posters
 
-  def fetchAndParsePostersPage(self, kinoPoiskId, maxPosters, dataKey):
+  def fetchAndParseImagesPage(self, url, maxPosters):
     """ Fetches and parses the first page of the movie posters or stills.
         @param {number} maxPosters Max number of posters (may still return more!).
     """
-    # TODO(zhenya): maybe add support for loading subsequent poster pages.
-    url = S.KINOPOISK_POSTERS_URL % (kinoPoiskId, 1) # We only care for the first page.
-    self.log.Info(' <<< Fetching posters page: "%s"...' % url)
+    self.log.Info(' <<< Fetching images page: "%s"...' % url)
     posterPage = self.httpUtils.requestAndParseHtmlPage(url)
     if posterPage is None:
       self.log.Debug('    NOT found!')
-      return {}
-    return self.parsePostersPage(posterPage, maxPosters, dataKey)
+      return []
+    return self.parseImagesPage(posterPage, maxPosters)
 
-  def parsePostersPage(self, page, maxItems, dataKey):
-    """ Parses a posters page or a page with stills.
+  def parseImagesPage(self, page, maxItems):
+    """ Parses a posters page or a page with images (posters and backgrounds).
         We have the same method to parse both since they are almost identical.
         @param {number} maxItems Max number of items (may still return more!).
     """
-    self.log.Info(' <<< Parsing %s page...' % dataKey)
-    data = {}
+    self.log.Info(' <<< Parsing images page...')
     posters = []
 
     # Find all anchor tags that wrap small thumbnail img tags.
     anchorElems = page.xpath('//table[@class="fotos" or @class="fotos " or @class="fotos fotos1" or @class="fotos fotos2"]//td/a')
     ind = 1 # Start with 1 as 0 is reserved for the main thumb.
-    # Give it more images to choose from.
-    if maxItems < 3:
-      maxItems = 6
-    else:
-      maxItems = maxItems * 2
+    maxItems = maxItems + 2  # Give it a few more images to choose from.
     for anchorElem in anchorElems:
-      thumb = self.parseImageDataFromAnchorElement(anchorElem, ind, dataKey)
+      thumb = self.parseImageDataFromAnchorElement(anchorElem, ind)
       posters.append(thumb)
       ind += 1
       if ind > maxItems:
         break
 
-    data[dataKey] = posters
-    self.log.Info(' <<< Parsed %d %s.' % (len(posters), dataKey))
-    return data
+    self.log.Info(' <<< Parsed %d images.' % len(posters))
+    return posters
 
-  def parseImageDataFromAnchorElement(self, anchorElem, index, dataKey):
+  def parseImageDataFromAnchorElement(self, anchorElem, index):
     """ Given an anchor element from a posters page,
         fetches the corresponding poster (individual) page and
         parses poster's data into a Thumbnail object.
@@ -434,9 +408,9 @@ class PageParser:
     if thumbUrl is not None:
       thumbUrl = ensureAbsoluteUrl(thumbUrl.strip())
 
-    # Fetch and parse the (individual) poster page.
+    # Fetch and parse individual page with image.
     posterPageUrl = ensureAbsoluteUrl(anchorElem.get('href').strip())
-    self.log.Debug('fetching a %s page: "%s".' % (dataKey, posterPageUrl))
+    self.log.Debug('fetching image page: "%s".' % posterPageUrl)
     posterPage = self.httpUtils.requestAndParseHtmlPage(posterPageUrl)
     if posterPage is not None:
       imageElem = common.getXpathOptionalNode(posterPage, '//img[@id="image"]')
@@ -453,30 +427,27 @@ class PageParser:
       return None
 
     thumb = common.Thumbnail(thumbUrl, ensureAbsoluteUrl(fullSizeUrl),
-      dimensions[0], dimensions[1], index, 0)
+      dimensions[0], dimensions[1], index, 0, 'null')
     if self.isDebug:
       self.log.Debug(' ... parsed a thumbnail:')
       print '    ' + str(thumb)
     return thumb
 
-  def fetchAndParseStillsData(self, kinoPoiskId, maxStills):
-    """ Fetches pages that contain fun art ("stills"), parses, scores,
-        and orders fun art data.
+  def fetchAndParseStillsData(self, kinoPoiskId, maxStills, lang):
+    """ Fetches pages that contain fun art ("backgrounds"), parses and scores them.
     """
-    stillsData = self.fetchAndParsePostersPage(kinoPoiskId, maxStills, 'stills')
-    stills = stillsData['stills']
-    # Sort results according to their score and chop out extraneous images. Сортируем результаты.
-    for still in stills:
-      common.scoreThumbnailResult(still, False)
-    stills = sorted(stills, key=lambda t : t.score, reverse=True)[0:maxStills]
-    self.maybeLogImageResult(stills)
-    return {'stills': stills}
+    backgrounds = self.fetchAndParseImagesPage(
+      S.KINOPOISK_STILLS_URL % kinoPoiskId, maxStills)
+    if len(backgrounds) == 0:
+      backgrounds = self.fetchAndParseImagesPage(
+        S.KINOPOISK_SCREENSHOTS_URL % kinoPoiskId, maxStills)
+    if len(backgrounds) == 0:
+      backgrounds = self.fetchAndParseImagesPage(
+        S.KINOPOISK_WALL_URL % kinoPoiskId, maxStills)
 
-  def maybeLogImageResult(self, thumbs):
-    if self.isDebug:
-      self.log.Debug('  ----- Scored and sorted thumbnails (%d):' % len(thumbs))
-      for thumb in thumbs:
-        self.log.Debug('  + score=%d, thumb="%s"' % (thumb.score, str(thumb.url)))
+    for background in backgrounds:
+      common.scoreThumbnailResult(background, False, lang)
+    return backgrounds
 
   def parseTitlePageInfoTable(self, data, page):
     """ Parses the main info <table> tag, which we find by a css classname "info".

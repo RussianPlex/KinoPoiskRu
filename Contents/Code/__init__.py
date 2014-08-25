@@ -1,32 +1,21 @@
 # -*- coding: utf-8 -*-
-#
-# Russian metadata plugin for Plex, which uses http://www.kinopoisk.ru/ to get the tag data.
-# Плагин для обновления информации о фильмах использующий КиноПоиск (http://www.kinopoisk.ru/).
-# Copyright (C) 2014  Yevgeny Nyden
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-#
-# @author zhenya (Yevgeny Nyden)
-# @version @PLUGIN.REVISION@
-# @revision @REPOSITORY.REVISION@
 
-import re, common, pageparser, pluginsettings as S
+"""
+Russian metadata plugin for Plex, which uses http://www.kinopoisk.ru/ to get the tag data.
+Плагин для обновления информации о фильмах использующий КиноПоиск (http://www.kinopoisk.ru/).
+
+@version @PLUGIN.REVISION@
+@revision @REPOSITORY.REVISION@
+@copyright (c) 2014 by Yevgeny Nyden
+@license GPLv3, see LICENSE for more details
+"""
+
+import common, pageparser, tmdbapi, pluginsettings as S
 
 
 LOGGER = Log
 IS_DEBUG = True # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
+
 
 # Plugin preferences.
 # When changing default values here, also update the DefaultPrefs.json file.
@@ -57,7 +46,11 @@ class KinoPoiskRuAgent(Agent.Movies):
   accepts_from = ['com.plexapp.agents.localmedia']
   contributes_to = None
   parser = pageparser.PageParser(
-    LOGGER, common.HttpUtils(S.ENCODING_KINOPOISK_PAGE, pageparser.USER_AGENT), IS_DEBUG)
+    LOGGER, common.HttpUtils(
+      S.ENCODING_KINOPOISK_PAGE, pageparser.USER_AGENT, PREFS.cacheTime), IS_DEBUG)
+  tmdbApi = tmdbapi.TmdbApi(
+    LOGGER, common.HttpUtils(
+      S.TMDB_PAGE_ENCODING, pageparser.USER_AGENT, PREFS.cacheTime), IS_DEBUG)
 
 
   ##############################################################################
@@ -97,33 +90,34 @@ class KinoPoiskRuAgent(Agent.Movies):
     LOGGER.Debug('UPDATE START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
     part = media.items[0].parts[0]
     filename = part.file.decode(common.ENCODING_PLEX)
-    LOGGER.Debug('filename="%s", guid="%s"' % (filename, metadata.guid))
-
-    matcher = re.compile(r'//(\d+)\?')
-    match = matcher.search(metadata.guid)
-    if match is None:
-      LOGGER.Error('KinoPoisk movie title id is not specified!')
-      raise Exception('ERROR: KinoPoisk movie title id is required!')
+    kinoPoiskId = metadata.id
+    if kinoPoiskId:
+      LOGGER.Debug('Updating with KinoPoisk id="%s", guid="%s", filename="%s"' %
+                   (str(kinoPoiskId), metadata.guid, filename))
+      self.updateMediaItem(metadata, kinoPoiskId, lang)
     else:
-      kinoPoiskId = match.groups(1)[0]
-    LOGGER.Debug('parsed KinoPoisk movie title id: "%s"' % kinoPoiskId)
-
-    self.updateMediaItem(metadata, kinoPoiskId)
+      LOGGER.Error('KinoPoisk movie title id is not specified!')
 
     LOGGER.Debug('UPDATE END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
 
-  def updateMediaItem(self, metadata, kinoPoiskId):
-    titlePage =  common.getElementFromHttpRequest(S.KINOPOISK_TITLE_PAGE_URL % kinoPoiskId, S.ENCODING_KINOPOISK_PAGE)
+  def updateMediaItem(self, metadata, kinoPoiskId, lang):
+    titlePage =  common.getElementFromHttpRequest(
+      S.KINOPOISK_TITLE_PAGE_URL % kinoPoiskId, S.ENCODING_KINOPOISK_PAGE)
     if titlePage is not None:
       # Don't update if the title page was failed to load.
       LOGGER.Debug('SUCCESS: got a KinoPoisk page for movie title id: "%s"' % kinoPoiskId)
       try:
         self.parseInfoTableTagAndUpdateMetadata(titlePage, metadata)    # Title, original title, ratings, and more.
+
+        # Search for a movie on TMDb to supplement our results with more data.
+        # IMPORTANT, this must be done after parseInfoTableTagAndUpdateMetadata,
+        # which populates the title and the year on the metadata object.
+        tmdbId = self.searchForImdbTitleId(metadata.title, metadata.year)
+
         self.parseStudioPageData(metadata, kinoPoiskId)                 # Studio. Студия.
         self.parseCastPageData(titlePage, metadata, kinoPoiskId)        # Actors, etc. Актёры. др.
-        self.parsePostersPageData(metadata, kinoPoiskId)                # Posters. Постеры.
-        self.parseStillsPageData(metadata, kinoPoiskId)                 # Background art. Stills.
+        self.updateImagesMetadata(metadata, kinoPoiskId, tmdbId, lang)   # Posters & Background art. Постеры.
       except:
         common.logException('failed to update metadata for id %s' % kinoPoiskId)
 
@@ -207,50 +201,72 @@ class KinoPoiskRuAgent(Agent.Movies):
       for mainActor in KinoPoiskRuAgent.parser.parseMainActorsFromLanding(titlePage):
         self.addActorToMetadata(metadata, mainActor, '')
 
-  def parsePostersPageData(self, metadata, kinoPoiskId):
-    """ Fetches and populates posters metadata.
+  def updateImagesMetadata(self, metadata, kinoPoiskId, tmdbId, lang):
+    """ Fetches and populates posters and background metadata.
     """
-    if PREFS.maxPosters == 0:
-      metadata.posters.validate_keys([])
-      return
+    # TODO - MAKE THIS A SETTING OR INTERNAL FLAG?
+    grabAllKinopoiskImages = False
 
-    data = KinoPoiskRuAgent.parser.fetchAndParsePostersData(kinoPoiskId, PREFS.maxPosters)
-    posters = data['posters']
-    if posters is not None and len(posters) > 0:
-      # Now, walk over the top N (<max) results and update metadata.
+    # Fetching images from TMDb.
+    tmdbResults = {'posters': [], 'backgrounds': []}
+    if tmdbId is not None and \
+        (PREFS.maxPosters > 0 or PREFS.maxArt > 0):
+      tmdbResults = self.tmdbApi.loadImagesForTmdbId(tmdbId, 'ru')
+
+    # Fetching posters from KinoPoisk.
+    posterKeys = []
+    if PREFS.maxPosters > 0:
+      maxPosters = 1
+      if grabAllKinopoiskImages:
+        # >1 posters makes us parse the posters page, whereas =1 just grabs one (main) image.
+        maxPosters = PREFS.maxPosters
+
+      # Combine results and pick only max of them.
+      posters = self.parser.fetchAndParsePostersData(kinoPoiskId, maxPosters, lang)
+      posters = sorted(posters + tmdbResults['posters'],
+        key=lambda t : t.score, reverse=True)
+      if IS_DEBUG:
+        LOGGER.Debug('  ----- Got total of %d posters:' % len(posters))
+        for p in posters:
+          LOGGER.Debug('  + score=%d, url="%s"' % (p.score, str(p.url)))
+      posters = posters[0:PREFS.maxPosters]
+
+      # Update the media's metadata.
       index = 0
-      validNames = list()
       for poster in posters:
         try:
           metadata.posters[poster.url] = Proxy.Preview(HTTP.Request(poster.thumbUrl), sort_order = index)
-          validNames.append(poster.url)
+          posterKeys.append(poster.url)
           index += 1
         except:
           pass
-      metadata.posters.validate_keys(validNames)
+    metadata.posters.validate_keys(posterKeys)
 
-  def parseStillsPageData(self, metadata, kinoPoiskId):
-    """ Fetches and populates background art metadata.
-        Получение адресов задников.
-    """
-    if PREFS.maxArt == 0:
-      metadata.art.validate_keys([])
-      return
+    # Fetching background images from KinoPoisk.
+    backgroundKeys = []
+    if PREFS.maxArt > 0:
+      if grabAllKinopoiskImages or len(tmdbResults['backgrounds']) == 0:
+        backgrounds = self.parser.fetchAndParseStillsData(kinoPoiskId, PREFS.maxArt, lang)
+      else:
+        backgrounds = []
+      backgrounds = sorted(backgrounds + tmdbResults['backgrounds'],
+        key=lambda t : t.score, reverse=True)
+      if IS_DEBUG:
+        LOGGER.Debug('  ----- Got total of %d backgrounds:' % len(backgrounds))
+        for b in backgrounds:
+          LOGGER.Debug('  + score=%d, url="%s"' % (b.score, str(b.url)))
+      backgrounds = backgrounds[0:PREFS.maxArt]
 
-    data = KinoPoiskRuAgent.parser.fetchAndParseStillsData(kinoPoiskId, PREFS.maxArt)
-    stills = data['stills']
-    if stills is not None and len(stills) > 0:
-      # Now, walk over the top N (<max) results and update metadata.
       index = 0
-      validNames = list()
-      for still in stills:
+      for background in backgrounds:
         try:
-          metadata.art[still.url] = Proxy.Preview(HTTP.Request(still.thumbUrl), sort_order = index)
-          validNames.append(still.url)
+          metadata.art[background.url] = \
+              Proxy.Preview(HTTP.Request(background.thumbUrl), sort_order = index)
+          backgroundKeys.append(background.url)
           index += 1
         except:
           pass
-      metadata.art.validate_keys(validNames)
+    metadata.art.validate_keys(backgroundKeys)
 
   def addActorToMetadata(self, metadata, actorName, roleName):
     """ Adds a new actor/role to a passed media metadata object.
@@ -262,3 +278,19 @@ class KinoPoiskRuAgent(Agent.Movies):
         role.role = roleName
     except:
       pass
+
+  def searchForImdbTitleId(self, mediaName, mediaYear):
+    """
+    """
+    match = self.tmdbApi.searchForBestImdbTitle(mediaName, mediaYear, 'ru')
+    if match is not None:
+      if match['score'] >= S.TMDB_MATCH_MIN_SCORE:
+        LOGGER.Debug('Found TMDb id "%s" match with score "%s".' %
+                     (str(match['id']), str(match['score'])))
+        return match['id']
+      else:
+        LOGGER.Debug('Skipping TMDb id "%s" match because of low score "%s".' %
+                     (str(match['id']), str(match['score'])))
+    else:
+      LOGGER.Debug('No TMDb matches were found.')
+    return None
