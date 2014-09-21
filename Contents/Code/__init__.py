@@ -20,12 +20,13 @@ IS_DEBUG = True # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
 # Plugin preferences.
 # When changing default values here, also update the DefaultPrefs.json file.
 PREFS = common.Preferences(
-  ('kinopoisk_pref_max_posters', S.KINOPOISK_PREF_DEFAULT_MAX_POSTERS),
-  ('kinopoisk_pref_max_art', S.KINOPOISK_PREF_DEFAULT_MAX_ART),
-  ('kinopoisk_pref_get_all_actors', S.KINOPOISK_PREF_DEFAULT_GET_ALL_ACTORS),
+  ('kinopoiskru_pref_max_posters', S.KINOPOISK_PREF_DEFAULT_MAX_POSTERS),
+  ('kinopoiskru_pref_max_art', S.KINOPOISK_PREF_DEFAULT_MAX_ART),
+  ('kinopoiskru_pref_get_all_actors', S.KINOPOISK_PREF_DEFAULT_GET_ALL_ACTORS),
   (None, None),
-  ('kinopoisk_pref_imdb_rating', S.KINOPOISK_PREF_DEFAULT_IMDB_RATING),
-  ('kinopoisk_pref_kp_rating', S.KINOPOISK_PREF_DEFAULT_KP_RATING))
+  ('kinopoiskru_pref_imdb_rating', S.KINOPOISK_PREF_DEFAULT_IMDB_RATING),
+  ('kinopoiskru_pref_kp_rating', S.KINOPOISK_PREF_DEFAULT_KP_RATING),
+  ('kinopoiskru_pref_avoid_kp_images', S.KINOPOISK_PREF_DEFAULT_AVOID_KP_IMAGES))
 
 
 def Start():
@@ -204,9 +205,6 @@ class KinoPoiskRuAgent(Agent.Movies):
   def updateImagesMetadata(self, metadata, kinoPoiskId, tmdbId, lang):
     """ Fetches and populates posters and background metadata.
     """
-    # TODO - MAKE THIS A SETTING OR INTERNAL FLAG?
-    grabAllKinopoiskImages = False
-
     # Fetching images from TMDb.
     tmdbResults = {'posters': [], 'backgrounds': []}
     if tmdbId is not None and \
@@ -217,7 +215,7 @@ class KinoPoiskRuAgent(Agent.Movies):
     posterKeys = []
     if PREFS.maxPosters > 0:
       maxPosters = 1
-      if grabAllKinopoiskImages:
+      if not PREFS.avoidKinoPoiskImages:
         # >1 posters makes us parse the posters page, whereas =1 just grabs one (main) image.
         maxPosters = PREFS.maxPosters
 
@@ -245,7 +243,7 @@ class KinoPoiskRuAgent(Agent.Movies):
     # Fetching background images from KinoPoisk.
     backgroundKeys = []
     if PREFS.maxArt > 0:
-      if grabAllKinopoiskImages or len(tmdbResults['backgrounds']) == 0:
+      if not PREFS.avoidKinoPoiskImages or len(tmdbResults['backgrounds']) == 0:
         backgrounds = self.parser.fetchAndParseStillsData(kinoPoiskId, PREFS.maxArt, lang)
       else:
         backgrounds = []

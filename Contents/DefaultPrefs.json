@@ -1,41 +1,47 @@
 [
   {
-    "id": "kinopoisk_pref_max_posters",
-    "label": "Максимум обложек (1 для лучшего результата!!!)",
-    "type": "enum",
-    "values": ["0", "1", "2", "4", "6", "10", "14", "20"],
-    "default": "1"
-  },
-  {
-    "id": "kinopoisk_pref_max_art",
-    "label": "Максимум фотографий",
+    "id": "kinopoiskru_pref_max_posters",
+    "label": "Максимум обложек (posters)",
     "type": "enum",
     "values": ["0", "1", "2", "4", "6", "10", "14", "20"],
     "default": "2"
   },
   {
-	  "id": "kinopoisk_pref_get_all_actors",
+    "id": "kinopoiskru_pref_max_art",
+    "label": "Максимум фотографий (funart)",
+    "type": "enum",
+    "values": ["0", "1", "2", "4", "6", "10", "14", "20"],
+    "default": "2"
+  },
+  {
+    "id": "kinopoiskru_pref_avoid_kp_images",
+    "label": "Уклонение от обложек с kinopoisk.ru",
+    "type": "bool",
+    "default": "true"
+  },
+  {
+	  "id": "kinopoiskru_pref_get_all_actors",
 		"label": "Брать всех актеров",
 		"type": "bool",
 		"default":	"false"
 	},
   {
-    "id": "kinopoisk_pref_cache_time",
+    "id": "kinopoiskru_pref_cache_time",
     "label": "Кэширование веб-данных",
     "type": "enum",
     "values": ["1 день", "1 неделя", "1 месяц", "1 год"],
     "default": "1 месяц"
   },
   {
-	  "id": "kinopoisk_pref_imdb_rating",
+	  "id": "kinopoiskru_pref_imdb_rating",
     "label": "Добавлять рейтинг IMDb в описание фильма",
 	  "type": "bool",
-	  "default": "false"
+	  "default": "true"
   },
   {
-    "id": "kinopoisk_pref_kp_rating",
+    "id": "kinopoiskru_pref_kp_rating",
     "label": "Добавлять рейтинг kinopoisk.ru в описание фильма",
 	  "type": "bool",
-	  "default": "false"
+	  "default": "true"
   }
 ]
