@@ -14,7 +14,7 @@ import common, pageparser, tmdbapi, pluginsettings as S
 
 
 LOGGER = Log
-IS_DEBUG = True # TODO - DON'T FORGET TO SET IT TO FALSE FOR A DISTRO.
+IS_DEBUG = 'True' == '@DEBUG.MAIN@'
 
 
 # Plugin preferences.
