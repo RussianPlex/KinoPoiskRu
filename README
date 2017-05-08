@@ -1,10 +1,10 @@
-Установка плагина.
+#Plugin installation
 
-Все очень просто, нужно скопировать бандл плагина (KinoPoiskRu.bundle)
-в директорию плагинов сервера Плекс.
+Simply copy plugin's *.bundle (KinoPoiskRu.bundle)
+to the Plex plugin's directory
 
-На Маке это скорей всего может находиться здесь:
+###For macOS it is:
 ~/Library/Application Support/Plex Media Server/Plug-ins/
 
-На Винде это может быть:
+###For Windows it may be:
 C:\Users\***Your User Name***\AppData\Local\Plex Media Server\Plug-ins\
