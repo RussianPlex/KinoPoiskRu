@@ -9,7 +9,7 @@ by Celia Oakley and licenced with GPLv3.
 @version @PLUGIN.REVISION@
 @revision @REPOSITORY.REVISION@
 @copyright (c) 2014 by Yevgeny Nyden
-@license GPLv3, see LICENSE for more details
+@license GPLv3, see LICENSE.MD for more details
 """
 
 import json

@@ -40,7 +40,7 @@ class TestLogger():
     """
     self.level = level
 
-# TODO(zhenya): print varargs as well.
+# TODO.MD(zhenya): print varargs as well.
 
   def Debug(self, fmt, *args, **kwargs):
     if self.level > 4:
