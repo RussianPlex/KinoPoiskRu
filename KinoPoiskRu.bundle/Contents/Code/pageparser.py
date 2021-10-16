@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 
 """
-Russian metadata plugin for Plex, which uses http://www.kinopoisk.ru/ to get the tag data.
-Плагин для обновления информации о фильмах использующий КиноПоиск (http://www.kinopoisk.ru/).
+Russian metadata plugin for Plex, which uses https://www.kinopoisk.ru/ to get the tag data.
+Плагин для обновления информации о фильмах использующий КиноПоиск (https://www.kinopoisk.ru/).
 
 @version @PLUGIN.REVISION@
 @revision @REPOSITORY.REVISION@
@@ -23,7 +23,7 @@ ROLE_USELESS_SUFFFIX = u', в титрах '
 MATCHER_MOVIE_DURATION = re.compile('\s*(\d+).*?', re.UNICODE | re.DOTALL)
 MATCHER_IMDB_RATING = re.compile('IMDb:\s*(\d+\.?\d*)\s*\(\s*([\s\d]+)\s*\)', re.UNICODE | re.DOTALL)
 
-USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36 Edge/18.18363'
+USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36 Edg/94.0.992.50'
 
 MOVIE_THUMBNAIL_SMALL_WIDTH = 130
 MOVIE_THUMBNAIL_SMALL_HEIGHT = 168
@@ -601,7 +601,7 @@ class PageParser:
 
 
 def ensureAbsoluteUrl(url):
-  """ Returns an absolute URL (starts with http://)
+  """ Returns an absolute URL (starts with https://)
       pre-pending base kinoposk URL to the passed URL when necessary.
   """
   if url is None or len(url.strip()) < 10:

@@ -21,8 +21,8 @@ KINOPOISK_PREF_DEFAULT_AVOID_KP_IMAGES = True
 ENCODING_KINOPOISK_PAGE = 'cp1251'
 
 # Разные страницы сайта.
-KINOPOISK_SITE_BASE = 'http://www.kinopoisk.ru/'
-KINOPOISK_RESOURCE_BASE = 'http://st.kp.yandex.net/'
+KINOPOISK_SITE_BASE = 'https://www.kinopoisk.ru/'
+KINOPOISK_RESOURCE_BASE = 'https://st.kp.yandex.net/'
 KINOPOISK_TITLE_PAGE_URL = KINOPOISK_SITE_BASE + 'film/%s/'
 KINOPOISK_CAST_PAGE_URL = KINOPOISK_SITE_BASE + 'film/%s/cast/'
 KINOPOISK_STUDIO_PAGE_URL = KINOPOISK_SITE_BASE + 'film/%s/studio/'
@@ -45,5 +45,5 @@ KINOPOISK_SEARCH_SIMPLE = KINOPOISK_SITE_BASE + 's/type/all/find/%s/set_result_t
 TMDB_PAGE_ENCODING = 'utf-8'
 TMDB_MATCH_MIN_SCORE = 85
 
-TMDB_IMAGE_ORIGINAL_BASE_URL = 'http://image.tmdb.org/t/p/original'
-TMDB_IMAGE_THUMB_BASE_URL = 'http://image.tmdb.org/t/p/w376'
+TMDB_IMAGE_ORIGINAL_BASE_URL = 'https://image.tmdb.org/t/p/original'
+TMDB_IMAGE_THUMB_BASE_URL = 'https://image.tmdb.org/t/p/w376'
