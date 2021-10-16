@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
@@ -21,14 +21,13 @@
 	<key>PlexAgentAttributionText</key>
 	<string>
     Агент для получения информации о медиа файлах с Русского сайта
-    &lt;a href=&quot;http://www.kinopoisk.ru/&quot;&gt;КиноПоиск&lt;/a&gt;,
+    &lt;a href=&quot;https://www.kinopoisk.ru/&quot;&gt;КиноПоиск&lt;/a&gt;,
     использование информации которого защищается
-    &lt;a href=&quot;http://www.kinopoisk.ru/level/76/doc/usage/&quot;&gt;пользовательским соглашением&lt;/a&gt;.
+    &lt;a href=&quot;https://www.yandex.ru/legal/kinopoisk_termsofuse/&quot;&gt;пользовательским соглашением&lt;/a&gt;.
     Разработчик плагина
-    &lt;a href=&quot;https://plus.google.com/+YevgenyNyden&quot;&gt;Евгений Найден (Yevgeny Nyden)&lt;/a&gt;.
+    &lt;a href=&quot;https://github.com/mrzhenya&quot;&gt;Евгений Найден (Yevgeny Nyden)&lt;/a&gt;.
     Сайт проекта &lt;b&gt;RussianPlex&lt;/b&gt;
-    &lt;a на href=&quot;http://russianplex.sourceforge.net/&quot;&gt;SourceForge&lt;/a&gt;.
-    Версия плагина @PLUGIN.REVISION@ (svn:@REPOSITORY.REVISION@).
+    &lt;a на href=&quot;https://github.com/RussianPlex&quot;&gt;GitHub&lt;/a&gt;.
     &lt;br&gt; &lt;br&gt;
     Если вы пользуетесь этим плагином и удовлетворены его качеством, ПОЖАЛУЙСТА,
     поддержите работу над русскими плагинами для Плекса своими пожертвованиями:
